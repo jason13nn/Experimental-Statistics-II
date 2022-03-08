@@ -1,0 +1,504 @@
+---
+title: "Assignment1"
+author: "Yichien Chou"
+date: "2020/1/27"
+output: word_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Introduction
+The report is designated for Century 21 Ames, Iowa and the purpose of the report is to illustrate the relationship between 79 explanatory variables and the homes sales price. 
+
+The raw data was provided by Dean De Cock at Truman State University and can be found on https://www.kaggle.com/c/house-prices-advanced-regression-techniques. It consists with 79 variables and 1460 rows. One of the most important variables is sales price which is also the variable we try to predict.
+
+In this project, I would use the dataset which already cleaned last semester. The dataset has 259 predictors and response variable `SalePrice`.
+
+## Feature Engineering
+### Create new variables
+Firstly, I created some new variables refer to [Kernel written by Erik Bruin (2018)](https://www.kaggle.com/erikbruin/house-prices-lasso-xgboost-and-a-detailed-eda#executive-summary).
+
+```{r, include=FALSE}
+house <- read.csv("/Users/jason13nn/Desktop/SMU/Spring 2020/STAT 6302 (Experimental Statistics)/data assignments/DA1/house.csv")
+
+#Create new variable TotBathrooms
+house$TotBathrooms <- house$FullBath + (house$HalfBath*0.5) + house$BsmtFullBath + (house$BsmtHalfBath*0.5)
+
+house$FullBath<-NULL
+house$HalfBath<-NULL
+house$BsmtFullBath<-NULL
+house$BsmtHalfBath<-NULL
+ 
+#Create new variable TotalPorchSF
+house$TotalPorchSF <- house$OpenPorchSF + house$EnclosedPorch + house$X3SsnPorch + house$ScreenPorch
+
+house$OpenPorchSF<-NULL
+house$EnclosedPorch<-NULL
+house$X3SsnPorch<-NULL
+house$ScreenPorch<-NULL
+
+#Create new variable Age
+house$Age <- as.numeric(house$YrSold)-house$YearRemodAdd
+
+#Create new variable Remod
+house$Remod <- ifelse(house$YearBuilt==house$YearRemodAdd, 0, 1) #0=No Remodeling, 1=Remodeling
+
+house$Remod <- as.factor(house$Remod)
+```
+
+I combined four bathroom variables into one new variable `TotBathrooms`. Each of them has little effect to the response variable. Thus, it is preferable to sum up the whole bathrooms, which makes it more important.
+
+Similarly, I consolidated four porch variables (not including `WoodDeckSF`) to create new variable `TotalPorchSF`.
+
+Furthermore, I created another variable called `Age` to calculate house age, which is determined by `YearRemodeled` and `YearSold`.
+
+I also added a variable `Remod` as a penalty parameter to indicate if `Age` is based on a remodeling date, because the remodeling houses might worth less than not remodeling.
+
+### Remove near-zero variables
+
+```{r, include=FALSE}
+##Identify and remove predictors with near-zero variance
+library(caret)
+
+nearZeroVar(house[2:24])
+```
+```{r, echo=FALSE}
+colnames(house[2:24])[nearZeroVar(house[2:24])]
+```
+
+From the output, I found that `BsmtFinSF2 `,`LowQualFinSF`, and `KitchenAbvGr` are near-zero variance variables, thus I removed these three variables due to the very little heterogeneity.
+
+```{r, include=FALSE}
+house$BsmtFinSF2 <- NULL
+house$LowQualFinSF <- NULL
+house$KitchenAbvGr <- NULL
+```
+
+### Natural cubic spline
+
+```{r, echo= FALSE, warning=FALSE}
+library(ggplot2)
+ggplot(house, aes(x = Age, y = SalePrice)) + geom_point()
+```
+
+I found that the new variable `Age` has nonlinear relationship with response variable `SalePrice`. I added a natural cubic spline in the model in order to satisfy the linearity assumption.
+
+```{r, include=FALSE}
+library(splines)
+#Create a natural spline with 5 df for the variable Age
+Age.spline <- ns(house$Age, df=5)
+
+#Combine the original data with the spline data
+house2 <- cbind(house, Age.spline)
+
+colnames(house2)[255:259] <- c("Age.NS1", "Age.NS2", "Age.NS3", "Age.NS14", "Age.NS5")
+
+#Remove original variable
+house2$Age <- NULL
+```
+
+## Ridge/Lasso/Elastic Net Results
+
+In this step, I performed three different penalized regression methods to select the final model. I used the Glmnet package and Caret package in R to select model.
+
+Firstly, I would find the best value for tuning parameter lambda using 10-cross validation method.
+
+```{r, include=FALSE}
+library(glmnet)
+library(caret)
+library(DWLasso)
+require(methods)
+
+#Split train and test sets
+SalePrice <- house2$SalePrice
+
+train <- house2[1:1460, ]
+test <-house2[1461:2919,]
+
+train.x <- data.matrix(train[,2:ncol(train)])
+train.y <- SalePrice[1:1460]
+
+test.x <- data.matrix(test[,2:ncol(test)])
+
+##1. Ridge Regression
+
+#Bulid ridge regression model
+ridge.mod <- glmnet(x = train.x, train.y, alpha = 0)
+
+#Tuning with cross-validation (10-fold CV)
+cv.out <- cv.glmnet(x = train.x, train.y, alpha = 0)
+```
+```{r, echo=FALSE}
+plot(cv.out)
+```
+The graph shows that the value of MSE increased as lambda increased in ridge regression model.
+```{r, include=FALSE}
+#Identify optimal tuning parameter
+bestlam <- cv.out$lambda.min
+```
+```{r, echo=FALSE}
+bestlam
+```
+The output is the best value of lambda for ridge regression model.
+```{r, include=FALSE}
+#Bulid ridge regression model
+ridge.pred <- predict(ridge.mod, s=bestlam, newx=test.x)
+
+out <- glmnet(train.x, train.y, alpha=0)
+predict(out, type="coefficients", s=bestlam)[1:20,]
+```
+
+```{r, include=FALSE}
+##2. The Lasso
+
+lasso.mod <- glmnet(x = train.x, train.y, alpha = 1)
+
+#Tuning with cross-validation (10-fold CV)
+my.control <- trainControl(method = "cv", number = 10)
+lassoGrid <- expand.grid(alpha = 1, lambda = seq(0.001,0.1,by = 0.0005))
+
+lasso.mod <- train(x=train.x, y=train.y, method='glmnet', trControl= my.control, tuneGrid=lassoGrid) 
+lasso.mod$bestTune
+```
+```{r, echo=FALSE}
+plot(cv.out)
+```
+The graph shows that the value of MSE increased as lambda increased in Lasso regression model.
+```{r, include=FALSE}
+#Identify optimal tuning parameter
+bestlam <- cv.out$lambda.min
+```
+```{r, echo=FALSE}
+bestlam
+```
+The output is the best value of lambda for Lasso regression model.
+```{r, include=FALSE}
+lasso.pred <- predict(cv.out, s=bestlam, newx=test.x)
+
+out <- glmnet(train.x, train.y, alpha=1)
+lasso.coef <- predict(out,type="coefficients",s=bestlam)
+lasso.coef
+lasso.coef[lasso.coef!=0]
+```
+
+```{r, include=FALSE}
+##3. Elastic Net
+
+##Specify that we want repeated 10-fold CV
+tcontrol <- trainControl(method="repeatedcv", number=10, repeats=5)
+
+##Define the grid of alpha and lambda values to check
+##Cut down on the length and spread of the lambda values
+tuneParam <- expand.grid(alpha = seq(0.1, 1, 0.1), lambda = 10^seq(2, -2, length=25))
+
+en.all <- train(train.x, train.y, trControl=tcontrol, method="glmnet", tuneGrid=tuneParam)
+attributes(en.all)
+en.all$results
+
+en.pred <- predict(en.all, s=bestlam, newx=test.x)
+```
+```{r, echo=FALSE}
+##Optimal tuning parameters
+en.all$bestTune
+```
+The output is the best value of lambda for ridge regression model.
+
+```{r, include=FALSE, warning=FALSE}
+en.final <- en.all$finalModel
+coef(en.final, alpha=en.all$bestTune$alpha, s=en.all$bestTune$lambda)
+```
+
+```{r, include= FALSE}
+lasso    <- glmnet(train.x, train.y, alpha = 1.0) 
+elastic1 <- glmnet(train.x, train.y, alpha = 0.25) 
+elastic2 <- glmnet(train.x, train.y, alpha = 0.75) 
+ridge    <- glmnet(train.x, train.y, alpha = 0.0)
+```
+```{r, echo= FALSE}
+par(mfrow = c(2,2), mar = c(4,2,4,2), + 0.1)
+plot(lasso, xvar = "lambda", main = "Lasso (Alpha = 1) \n\n")
+plot(elastic1, xvar = "lambda", main = "Elastic Net (Alpha = 0.75) \n\n")
+plot(elastic2, xvar = "lambda", main = "Elastic Net (Alpha = 0.25) \n\n")
+plot(ridge, xvar = "lambda", main = "Ridge (Alpha = 0) \n\n")
+```
+This is the graphs of solution path for each model.
+
+```{r pressure, echo=FALSE, fig.width=1, fig.height=10}
+knitr::include_graphics("/Users/jason13nn/Desktop/SMU/Spring 2020/STAT 6302 (Experimental Statistics)/data assignments/DA1/Kaggle score.png")
+```
+The highest score I received from Kaggle is 0.13973, which is from the Lasso regression model.
+
+From the Lasso regression model, it shows that `GrLivArea`, `YearRemodAdd`, `X2ndFlrSF`, and `MasVnrArea` are the most important prdictors in the final model.
+
+##  How this analysis improves upon my project 
+
+First of all, compare to previous project, I combined some small effect variables into new variables, which is more important to the response variable. 
+
+Furthermore, I I removed some near-zero variance predictors which I did not remove in the project. That is, I did the data reduction using some methods I did not use last semester. As result, the number of predictos decreased from 260 to 254.
+
+Last but not least, I also transform a nonlinearity predictor into polynomials using natural splines in order to fit the linearity assumption. (I did not encounter this problem in the last project, this variable is created in this project.)
+
+In sum, I focused on data pre-processing step this time. However, I did not take some methods into account such as centering/scaling, resolving skewness, binning predictors, or Box-Cox transfornation
+
+## Conclusion
+
+Firstly, from the final regression model, we can see that one of the criteria for increase the value of a house is "Above grade (ground) living area square feet". It is reasonable that the house price for the larger living area houses is higher than the smaller ones. 
+
+Secondly, another factor "Remodel date" is also a very important one in this model.
+It is also not hard to explain that the newer houses basically have higher sale price than old ones.
+
+Thirdly, it is interesting that the second floor square feet is a more important factor than the first floor square feetin the model. It is also understandible that the house price would increases as the second floor square feet increases. The large second floor square feet also implies large first floor square feet. So, I think this factor is very similar to the first predictor.
+
+Lastly, the larger Masonry veneer area would increase the sale price. The price of masonry wall in US is $200-$259/ square feet. (To see details, visit [homewyse]("https://www.homewyse.com/services/cost_to_install_masonry_wall.html"))
+
+There were other influential variables, I just mentioned the most essential predictors.
+
+## Appendix (Code)
+
+```{r, eval=F, echo=T}
+##data cleaning
+library(VIM)
+library(tidyverse)
+
+#read datasets
+train<-read.csv("/Users/jason13nn/Desktop/SMU/Fall 2019/STAT 6301(Experimental Stat)/Project/data/train.csv")
+test<-read.csv("/Users/jason13nn/Desktop/SMU/Fall 2019/STAT 6301(Experimental Stat)/Project/data/test.csv")
+
+#Merge datasets
+test$SalePrice <- NA
+data<-rbind(train,test)
+
+SalePrice<-data$SalePrice
+data$SalePrice<-NULL
+
+##Delete Variables(too many missing value, class imbalanced)
+data$Alley<-NULL
+data$PoolQC<-NULL
+data$Fence<-NULL
+data$MiscFeature<-NULL
+data$Street<-NULL
+data$Utilities<-NULL
+data$Condition2<-NULL
+data$FireplaceQu<-NULL 
+data$MiscVal<-NULL 
+data$RoofMatl<-NULL
+data$Heating<-NULL 
+#69 variables left
+
+##Single Imputation
+#See the number of NAs for each variable
+sapply(data, function(x) sum(is.na(x)))
+
+#Impute missing values
+data <- hotdeck(data)
+#View(train)
+
+#tramsformation of LotArea
+data$log_LotArea<-log(data$LotArea)
+data <- subset(data, select = -c(LotArea))
+
+#Transform categorical variables into Dummy variables
+library(dummies)
+
+dummy1<-dummy(data$LotShape)
+dummy2<-dummy(data$LandContour)
+dummy3<-dummy(data$LotConfig)
+dummy4<-dummy(data$LandSlope)
+dummy5<-dummy(data$Neighborhood)
+dummy6<-dummy(data$Condition1)
+dummy7<-dummy(data$BldgType)
+dummy8<-dummy(data$HouseStyle)
+dummy9<-dummy(data$RoofStyle)
+dummy10<-dummy(data$Exterior1st)
+dummy11<-dummy(data$Exterior2nd)
+dummy12<-dummy(data$MasVnrType)
+dummy13<-dummy(data$ExterQual)
+dummy14<-dummy(data$ExterCond)
+dummy15<-dummy(data$Foundation)
+dummy16<-dummy(data$BsmtQual)
+dummy17<-dummy(data$BsmtCond)
+dummy18<-dummy(data$BsmtExposure)
+dummy19<-dummy(data$BsmtFinType1)
+dummy20<-dummy(data$BsmtFinType2)
+dummy21<-dummy(data$HeatingQC)
+dummy22<-dummy(data$CentralAir)
+dummy23<-dummy(data$Electrical)
+dummy24<-dummy(data$KitchenQual)
+dummy25<-dummy(data$Functional)
+dummy26<-dummy(data$GarageType)
+dummy27<-dummy(data$GarageFinish)
+dummy28<-dummy(data$GarageQual)
+dummy29<-dummy(data$GarageCond)
+dummy30<-dummy(data$PavedDrive)
+dummy31<-dummy(data$SaleType)
+dummy32<-dummy(data$SaleCondition)
+dummy33<-dummy(data$MSZoning)
+dummy34<-dummy(data$MSSubClass)
+
+#Combine Dummy Variables 
+dummies <- dummy1
+for(i in 2:34) {
+  dummy_i <- eval(parse(text = paste("dummy", i, sep = "")))
+  dummies <- cbind(dummies, dummy_i)
+}
+dim(dummies)
+#Delete all the categorical variables
+data<-data[,sapply(data, is.numeric)]
+
+#Add Dummy Variables into Data
+data<-cbind(data,dummies,SalePrice)
+
+write.csv(data,file="/Users/jason13nn/Desktop/SMU/Spring 2020/STAT 6302 (Experimental Statistics)/data assignments/DA1/house.csv")
+
+house <- read.csv("/Users/jason13nn/Desktop/SMU/Spring 2020/STAT 6302 (Experimental Statistics)/data assignments/DA1/house.csv")
+
+#Create new variable TotBathrooms
+house$TotBathrooms <- house$FullBath + (house$HalfBath*0.5) + house$BsmtFullBath + (house$BsmtHalfBath*0.5)
+
+house$FullBath<-NULL
+house$HalfBath<-NULL
+house$BsmtFullBath<-NULL
+house$BsmtHalfBath<-NULL
+ 
+#Create new variable TotalPorchSF
+house$TotalPorchSF <- house$OpenPorchSF + house$EnclosedPorch + house$X3SsnPorch + house$ScreenPorch
+
+house$OpenPorchSF<-NULL
+house$EnclosedPorch<-NULL
+house$X3SsnPorch<-NULL
+house$ScreenPorch<-NULL
+
+#Create new variable Age
+house$Age <- as.numeric(house$YrSold)-house$YearRemodAdd
+
+#Create new variable Remod
+house$Remod <- ifelse(house$YearBuilt==house$YearRemodAdd, 0, 1) #0=No Remodeling, 1=Remodeling
+
+house$Remod <- as.factor(house$Remod)
+
+##Identify and remove predictors with near-zero variance
+library(caret)
+
+nearZeroVar(house[2:24])
+colnames(house[2:24])[nearZeroVar(house[2:24])]
+
+library(splines)
+#Create a natural spline with 5 df for the variable Age
+Age.spline <- ns(house$Age, df=5)
+
+#Combine the original data with the spline data
+house2 <- cbind(house, Age.spline)
+
+colnames(house2)[255:259] <- c("Age.NS1", "Age.NS2", "Age.NS3", "Age.NS14", "Age.NS5")
+
+#Remove original variable
+house2$Age <- NULL
+
+library(glmnet)
+library(caret)
+library(DWLasso)
+require(methods)
+
+#Split train and test sets
+SalePrice <- house2$SalePrice
+
+train <- house2[1:1460, ]
+test <-house2[1461:2919,]
+
+train.x <- data.matrix(train[,2:ncol(train)])
+train.y <- SalePrice[1:1460]
+
+test.x <- data.matrix(test[,2:ncol(test)])
+
+##1. Ridge Regression
+
+#Bulid ridge regression model
+ridge.mod <- glmnet(x = train.x, train.y, alpha = 0)
+
+#Tuning with cross-validation (10-fold CV)
+cv.out <- cv.glmnet(x = train.x, train.y, alpha = 0)
+
+plot(cv.out)
+
+#Identify optimal tuning parameter
+bestlam <- cv.out$lambda.min
+bestlam
+
+#Bulid ridge regression model
+ridge.pred <- predict(ridge.mod, s=bestlam, newx=test.x)
+
+out <- glmnet(train.x, train.y, alpha=0)
+predict(out, type="coefficients", s=bestlam)[1:20,]
+
+##2. The Lasso
+
+lasso.mod <- glmnet(x = train.x, train.y, alpha = 1)
+
+#Tuning with cross-validation (10-fold CV)
+cv.out <- cv.glmnet(x = train.x, train.y, alpha = 1)
+
+plot(cv.out)
+
+#Identify optimal tuning parameter
+bestlam <- cv.out$lambda.min
+bestlam
+lasso.pred <- predict(lasso.mod, s=bestlam, newx=test.x)
+
+out <- glmnet(train.x, train.y, alpha=1)
+lasso.coef <- predict(out,type="coefficients",s=bestlam)[1:20,]
+lasso.coef
+lasso.coef[lasso.coef!=0]
+
+##3. Elastic Net
+
+##Specify that we want repeated 10-fold CV
+tcontrol <- trainControl(method="repeatedcv", number=10, repeats=5)
+
+##Define the grid of alpha and lambda values to check
+##Cut down on the length and spread of the lambda values
+tuneParam <- expand.grid(alpha = seq(0.1, 1, 0.1), lambda = 10^seq(2, -2, length=25))
+
+en.all <- train(train.x, train.y, trControl=tcontrol, method="glmnet", tuneGrid=tuneParam)
+attributes(en.all)
+en.all$results
+
+##Optimal tuning parameters
+en.all$bestTune
+
+en.final <- en.all$finalModel
+coef(en.final, alpha=en.all$bestTune$alpha, s=en.all$bestTune$lambda)
+
+en.pred <- predict(en.all, s=bestlam, newx=test.x)
+
+lasso    <- glmnet(train.x, train.y, alpha = 1.0) 
+elastic1 <- glmnet(train.x, train.y, alpha = 0.25) 
+elastic2 <- glmnet(train.x, train.y, alpha = 0.75) 
+ridge    <- glmnet(train.x, train.y, alpha = 0.0)
+ 
+par(mfrow = c(2,2), mar = c(4,2,4,2), + 0.1)
+plot(lasso, xvar = "lambda", main = "Lasso (Alpha = 1) \n\n")
+plot(elastic1, xvar = "lambda", main = "Elastic Net (Alpha = 0.75) \n\n")
+plot(elastic2, xvar = "lambda", main = "Elastic Net (Alpha = 0.25) \n\n")
+plot(ridge, xvar = "lambda", main = "Ridge (Alpha = 0) \n\n")
+###Upload prediction to Kaggle
+
+ID<-c(1461:2919)
+
+#Ridge Regression (0.14137)
+ridge.pred<-cbind(ID,ridge.pred)
+colnames(ridge.pred)<-c("ID","SalePrice")
+write.csv(ridge.pred,file="/Users/jason13nn/Desktop/SMU/Spring 2020/STAT 6302 (Experimental Statistics)/data assignments/DA1/test_ridge.csv")
+
+#The Lasso (0.13973)
+lasso.pred<-cbind(ID,lasso.pred)
+colnames(lasso.pred)<-c("ID","SalePrice")
+write.csv(lasso.pred,file="/Users/jason13nn/Desktop/SMU/Spring 2020/STAT 6302 (Experimental Statistics)/data assignments/DA1/test_lasso.csv")
+
+#Elastic Net (0.13973)
+en.pred<-cbind(ID,en.final)
+colnames(en.pred)<-c("ID","SalePrice")
+write.csv(lasso.pred,file="/Users/jason13nn/Desktop/SMU/Spring 2020/STAT 6302 (Experimental Statistics)/data assignments/DA1/test_en.csv")
+```
+
+
+

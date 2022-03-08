@@ -1,0 +1,577 @@
+---
+title: "DA3"
+author: "Yichien Chou"
+date: "2020/4/5"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+Credit <- read.csv("/Users/jason13nn/Desktop/SMU/Spring 2020/STAT 6302 (Experimental Statistics)/files/default of credit card clients.csv")
+```
+# R Logistic Regression Model, Part I
+
+## (a)
+
+```{r}
+#categorize variables
+Credit$DEFAULT1 <- as.factor(Credit$DEFAULT)
+Credit$SEX <- factor(Credit$SEX, levels = c(1,2), labels = c("male", "female"))
+Credit$EDUCATION <- factor(Credit$EDUCATION, levels = c(0:6))
+Credit$MARRIAGE <- factor(Credit$MARRIAGE, levels = c(0:3), 
+                          labels = c("unknown", "married", "single", "other"))
+Credit$MARRIAGE <- relevel(Credit$MARRIAGE, ref = "single")
+
+#split data
+set.seed(1)
+trainid <- sample(1:nrow(Credit), size = 20000)
+train <- Credit[trainid,]
+test <- Credit[-trainid,]
+```
+
+## (b)
+
+```{r,, echo=FALSE}
+##no-information rate
+table(train$DEFAULT)
+```
+The no-information rate is 15574/20000 = 77.93%.
+
+## (c)
+
+```{r, echo=FALSE}
+#logistic model
+Credit.logit <- glm(DEFAULT ~ LIMIT_BAL + SEX + EDUCATION + MARRIAGE + AGE, data=train, family='binomial')
+summary(Credit.logit)
+```
+I treated `SEX`, `MARRIAGE`, and `EDUCATION` as categorical predictors. Besides, I picked "male" in `SEX`, "0" in `EDUCATION`, and "Single" in `MARRIAGE` as the reference.
+
+## (d)
+*Age*: A 1 year increase in age multiplies the odds of default by exp(0.0055) = 1.0055.
+
+*Sex*: Compare to males, being a female multiplies the odds of default by exp(-0.1665) = 0.8466.
+
+## (e)
+
+```{r, echo=FALSE, message=FALSE}
+library(caret)
+
+train$prob <- predict(Credit.logit, train, type = "response")
+train$pred <- ifelse(train$prob > 0.5, 1,0)
+
+##Generate the calibration analysis
+calData1 <- calibration(DEFAULT1 ~ prob, data = train, cuts = 5, class = "1")
+
+##Plot the curve
+xyplot(calData1, auto.key = list(columns = 2))
+```
+
+No samples with default payment were predicted with a probability above about 0.5. The probabilities are not well-calibrated.
+
+## (f)
+
+```{r, echo=FALSE, message=FALSE}
+library(pROC)
+
+#ROC and AUC
+Credit.ROC <- roc(train$DEFAULT, train$prob)
+plot(Credit.ROC, legacy.axes = TRUE, col="blue", lwd=3, print.auc=TRUE)
+
+#CI of the AUC
+ci(Credit.ROC)
+```
+The AUC is 0.627 and the 95% Delong CI is between 0.6182 and 0.6365.
+
+## (g)
+
+```{r, echo=FALSE, message=FALSE}
+#Kappa Statistic
+library("vcd")
+library(ModelMetrics)
+
+kappa <- kappa(actual = train$DEFAULT, predicted = train$pred, cutoff =  0.5)
+cat("Kappa Statistic:",kappa)
+
+#Brier Score
+library(scoring)
+
+brierScore <- mean((train$prob-train$DEFAULT)^2)
+cat("Brier Score:", brierScore)
+```
+The observed accuarcy is (15585+0)/20000 = 0.77925. 
+(20000x15585)/20000 = 15585, ((0x4415))/20000 = 0
+Thus, the expected accuracy is (15585+0)/20000 = 0.77925.
+Therefore, the kappa = (0.77925-0.77925)/1-0.77925 = 0, which means no agreement between observed and predicted. (We can simply find the brier score using R)
+
+The Brier score is 0.1666. 
+
+## (h)
+```{r, echo = FALSE}
+library(OptimalCutpoints)
+
+##Find the optimal cutpoint for maximizing Kappa
+optCutOff.summary <- optimal.cutpoints(X="prob", status="DEFAULT", data=train, tag.healthy='0', methods='MaxKappa')
+optCutOff.summary
+#optimal cutpoint
+optCutOff <- optCutOff.summary$MaxKappa$Global$optimal.cutoff$cutoff
+optCutOff
+```
+
+The optimal cutpoint is 0.2594.
+
+## (i)
+
+```{r, echo=FALSE}
+
+test$prob <- predict(Credit.logit, test, type = "response")
+
+#confusion matrix
+mat <- confusionMatrix(actual = test$DEFAULT, predicted = test$prob, cutoff = optCutOff)
+mat
+```
+
+The accauracy is (5360+1053)/10000 = 0.6413.
+
+## (j)
+
+```{r, echo=FALSE, message=FALSE}
+test$pred <- ifelse(test$prob > optCutOff, 1, 0)
+
+#histograms
+library(ggplot2)
+
+def.labs <- c("0" = "True Outcome: No", "1" = "True Outcome: Yes")
+
+p1 <- ggplot(test, aes(x = prob)) + 
+  geom_histogram(col = "black", fill = "blue", alpha = .2) + 
+  geom_density() +
+  facet_grid(.~DEFAULT, labeller = as_labeller(def.labs)) +
+  labs(x = "Probability of Default Payment", y = "Count") +
+  theme_bw()
+p1
+```
+
+Those with default payment have a higher probability of "Yes" than that of  "No". The distribution of probability with "No" seems symmetric.
+
+## (k)
+
+First, the logistic model showed the amount of the given credit, gender, and marital status are statistical significant (p<0.01).
+
+Second, from the calibration plot, we can see that when the true outcome was non-default, the fitted probabilities didn't perform well. On the other hand, when the true outcome was default, most of the fitted probabilities were above the cutpoint (0.2647).
+
+If we choose 0.5 as the cutpoint, the accuracy of the model was about 78%. However, the number of predicted default was 0, so the model had not power predicting default credit cards. Therefore, I choose the optimal cutpoint 0.2647 as the threshold. Nevertheless, the accuracy was merely 66.01%. The kappa statistic in this model implied no agreement between observed and predicted without using the optimal cutpoint.
+
+# Principal Component Analysis
+
+## (a)
+
+```{r, echo=FALSE, message=FALSE}
+library(factoextra)
+
+Credit.PCA <- prcomp(Credit[,7:24], center=T, scale=T)
+summary(Credit.PCA)
+```
+
+## (b)
+
+```{r, echo=FALSE}
+#scree plot
+fviz_eig(Credit.PCA)
+```
+
+The scree plot, the elbow occurs at PC4. Therefore, I kept the first four principal components.
+
+```{r, echo=TRUE}
+#cumulative percentage of variation
+(VE <- Credit.PCA$sdev^2)
+PVE <- VE / sum(VE)
+round(PVE, 2)
+```
+
+On the other hand, if we see the cumulative percentage of variation explained by the components, we can find that the first six PCs explained 0.36 +0.21+ 0.08 +0.05 +0.05+ 0.05 = 0.80 of the variance. However, the last four PCs were less than 0.1. 
+
+Generally speaking, I kept the first two PCs.
+
+## (c)
+
+```{r, echo=FALSE}
+#first two factor loadings
+Credit.PCA$rotation[,1:2]
+```
+
+`PC1` weighted almost on the amount of bill statement. I would name it as “Bill statement-related”. 
+
+In `PC2`, it weighted almost equally on the past payment behavior. I would name it as “past payment behavior-related”
+
+## (d)
+
+```{r, echo=FALSE}
+##Create a plot that shows PC1 vs. PC2 AND factor loadings
+fviz_pca_var(Credit.PCA, col.var = "contrib", 
+gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+repel = TRUE)
+
+##Plot PC1 vs. PC2 by default
+fviz_pca_ind(Credit.PCA, label="none", habillage=Credit$DEFAULT,
+addEllipses=TRUE, ellipse.level=0.95, palette = "Dark2")
+```
+
+By plotting PC1 vs PC2, there is no clear separation of the default group.
+
+
+# Logistic Regression Model, Part II
+
+## (a)
+
+```{r, echo=FALSE}
+#add PCs to dataset
+Credit.new <- Credit
+Credit.new$PC1 <- Credit.PCA$x[,1]
+Credit.new$PC2 <- Credit.PCA$x[,2]
+
+#split data
+set.seed(1)
+trainid2 <- sample(1:nrow(Credit.new), size = 20000)
+train2 <- Credit.new[trainid,]
+test2 <- Credit.new[-trainid,]
+#logistic model with PCs
+Credit.new.logit <- glm(DEFAULT ~ LIMIT_BAL + SEX + EDUCATION + MARRIAGE + AGE + PC1 + PC2, data=train2, family='binomial')
+summary(Credit.new.logit)
+```
+
+## (b)
+
+```{r, echo=FALSE}
+library(knitr)
+
+##Find the optimal cutpoint for new model
+train2$prob <- predict(Credit.new.logit, train2, type = "response")
+train2$pred <- ifelse(train2$prob > 0.5, 1,0)
+test2$prob <- predict(Credit.new.logit, test2, type = "response")
+test2$pred <- ifelse(test2$prob > 0.5, 1,0)
+
+optCutOff.summary2 <- optimal.cutpoints(X="prob", status="DEFAULT", data=train2, tag.healthy='0', methods='MaxKappa')
+
+#optimal cutpoint
+optCutOff2 <- optCutOff.summary2$MaxKappa$Global$optimal.cutoff$cutoff
+
+#Kappa Statistic
+kappa  <- kappa(actual = test$DEFAULT , predicted = test$pred , cutoff =  optCutOff )
+kappa2 <- kappa(actual = test2$DEFAULT, predicted = test2$pred, cutoff =  optCutOff2)
+
+#Brier Score
+brierScore  <- mean((test$prob-test$DEFAULT)^2)
+brierScore2 <- mean((test2$prob-test2$DEFAULT)^2)
+
+#AUC
+AUC <- as.data.frame(optCutOff.summary$MaxKappa$Global$measures.acc$AUC)
+AUC <- AUC[1,1]
+
+AUC2 <- as.data.frame(optCutOff.summary2$MaxKappa$Global$measures.acc$AUC)
+AUC2 <- AUC2[1,1]
+
+#AIC
+AIC.1 <- AIC(Credit.logit)
+AIC.2 <- AIC(Credit.new.logit)
+
+#Create summary table
+compare.table <- data.frame(Modname = c("Model without PCs", "Model with PCs"),
+                            Kappa = c(kappa, kappa2),
+                            Brier_Score = c(brierScore, brierScore2),
+                            AUC = c(AUC, AUC2))
+kable(compare.table)
+```
+
+To compare the two models above:
+
+*Kappa*: The values between 0.3 and 0.5 indicate reasonable agreement. The model with PCs has a better Kappa statistic than the model without PCs.
+
+*Brier Score*: The function measures the accuracy of probabilistic predictions. The model with PCs has a lower Brier score, which means the higher accuracy of predicting.
+
+*AUC*: The model with PCs with higher AUC implies a more precise prediction.
+
+In sum, the model with PCs is more precise in predicting the default status.
+
+# Bonus
+
+## (a)
+
+For the variable "EDUCATION", it is not merely a categorical variable, but also an ordinal predictor. I think if we treated as an ordinal predictor, it would offer more information. Thus, I transformed it as an ordinal predictor and re-run the model.
+
+```{r}
+Credit.new$EDUCATION.Ord <- factor(Credit.new$EDUCATION, ordered = TRUE)
+```
+
+## (b)
+
+```{r, echo=FALSE, message=FALSE}
+#Elastic net logistic regression model
+library(glmnet)
+library(tidyverse)
+
+Credit.net <-Credit.new
+
+Credit.net$DEFAULT1 <- NULL
+Credit.net[,7:12] <- NULL
+Credit.net$EDUCATION <- NULL
+Credit.net$ID <- NULL
+
+
+
+#split data
+set.seed(1)
+trainid3 <- sample(1:nrow(Credit.net), size = 20000)
+train3 <- Credit.net[trainid3,]
+test3 <- Credit.net[-trainid3,]
+
+train.X <- model.matrix(DEFAULT~., train3)[,-17]
+train.y <- as.factor(train3$DEFAULT)
+
+test.X <- model.matrix(DEFAULT~., test3)[,-17]
+test.y <- test3$DEFAULT
+
+##Specify that we want repeated 10-fold CV
+tcontrol <- trainControl(method="repeatedcv", number=10, repeats=5)
+
+##Define the grid of alpha and lambda values to check
+##Cut down on the length and spread of the lambda values
+tuneParam <- expand.grid(alpha = seq(0.1, 1, 0.1), lambda = 10^seq(2, -2, length=25))
+
+Credit.Elastic <- train(train.X, train.y, trControl=tcontrol, method="glmnet", tuneGrid=tuneParam)
+
+#Coef Plot
+en.final <- Credit.Elastic$finalModel
+coefs <- coef(en.final, alpha=en.all$bestTune$alpha, s=Credit.Elastic$bestTune$lambda)
+
+coef_frame <- data.frame(coef = rownames(coefs)[-1],
+                        value = coefs[-1,1])
+
+ggplot(coef_frame, aes(x=coef, y=value)) + 
+  geom_pointrange(aes(ymin=0, ymax=value), col = "black", fill = "blue") + 
+  ggtitle("Coefficients of Elastic Net Model") + 
+  coord_flip() +
+  theme_bw()
+```
+
+By the plot above, we can see there were 10 non-zero predictors.
+
+
+# Appendix (R code)
+```{r, eval=FALSE}
+Credit <- read.csv("/Users/jason13nn/Desktop/SMU/Spring 2020/STAT 6302 (Experimental Statistics)/files/default of credit card clients.csv")
+
+#categorize variables
+Credit$DEFAULT1 <- factor(Credit$DEFAULT, levels = c("non-Default", "Default"))
+Credit$SEX <- factor(Credit$SEX, levels = c(1,2), labels = c("male", "female"))
+Credit$EDUCATION <- factor(Credit$EDUCATION, levels = c(0:6))
+Credit$MARRIAGE <- factor(Credit$MARRIAGE, levels = c(0:3), 
+                          labels = c("unknown", "married", "single", "other"))
+Credit$MARRIAGE <- relevel(Credit$MARRIAGE, ref = "single")
+
+#split data
+set.seed(1)
+trainid <- sample(1:nrow(Credit), size = 20000)
+train <- Credit[trainid,]
+test <- Credit[-trainid,]
+
+##no-information rate
+table(train$DEFAULT)
+
+#logistic model
+Credit.logit <- glm(DEFAULT ~ LIMIT_BAL + SEX + EDUCATION + MARRIAGE + AGE, data=train, family='binomial')
+summary(Credit.logit)
+
+library(caret)
+
+train$prob <- predict(Credit.logit, train, type = "response")
+train$pred <- ifelse(train$prob > 0.5, 1,0)
+
+##Generate the calibration analysis
+calData1 <- calibration(DEFAULT1 ~ prob, data = train, cuts = 5, class = "1")
+
+##Plot the curve
+xyplot(calData1, auto.key = list(columns = 2))
+
+library(caret)
+
+train$prob <- predict(Credit.logit, train, type = "response")
+train$pred <- ifelse(train$prob > 0.5, 1,0)
+
+##Generate the calibration analysis
+calData1 <- calibration(DEFAULT1 ~ prob, data = train, cuts = 5, class = "1")
+
+##Plot the curve
+xyplot(calData1, auto.key = list(columns = 2))
+
+#Kappa Statistic
+library("vcd")
+library(ModelMetrics)
+
+kappa <- kappa(actual = train$DEFAULT, predicted = train$pred, cutoff =  0.5)
+cat("Kappa Statistic:",kappa)
+
+#Brier Score
+library(scoring)
+
+brierScore <- mean((train$prob-train$DEFAULT)^2)
+cat("Brier Score:", brierScore)
+
+library(OptimalCutpoints)
+
+##Find the optimal cutpoint for maximizing Kappa
+optCutOff.summary <- optimal.cutpoints(X="prob", status="DEFAULT", data=train, tag.healthy='0', methods='MaxKappa')
+optCutOff.summary
+#optimal cutpoint
+optCutOff <- optCutOff.summary$MaxKappa$Global$optimal.cutoff$cutoff
+optCutOff
+
+test$prob <- predict(Credit.logit, test, type = "response")
+
+#confusion matrix
+mat <- confusionMatrix(actual = test$DEFAULT, predicted = test$prob, cutoff = optCutOff)
+mat
+
+test$pred <- ifelse(test$prob > optCutOff, 1, 0)
+
+#histograms
+library(ggplot2)
+
+def.labs <- c("0" = "True Outcome: No", "1" = "True Outcome: Yes")
+
+p1 <- ggplot(test, aes(x = prob)) + 
+  geom_histogram(col = "black", fill = "blue", alpha = .2) + 
+  geom_density() +
+  facet_grid(.~DEFAULT, labeller = as_labeller(def.labs)) +
+  labs(x = "Probability of Default Payment", y = "Count") +
+  theme_bw()
+p1
+
+library(factoextra)
+
+Credit.PCA <- prcomp(Credit[,7:24], center=T, scale=T)
+summary(Credit.PCA)
+
+##Create a plot that shows PC1 vs. PC2 AND factor loadings
+fviz_pca_var(Credit.PCA, col.var = "contrib", 
+gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+repel = TRUE)
+
+##Plot PC1 vs. PC2 by default
+fviz_pca_ind(Credit.PCA, label="none", habillage=Credit$DEFAULT,
+addEllipses=TRUE, ellipse.level=0.95, palette = "Dark2")
+
+#add PCs to dataset
+Credit.new <- Credit
+Credit.new$PC1 <- Credit.PCA$x[,1]
+Credit.new$PC2 <- Credit.PCA$x[,2]
+
+#split data
+set.seed(1)
+trainid2 <- sample(1:nrow(Credit.new), size = 20000)
+train2 <- Credit.new[trainid,]
+test2 <- Credit.new[-trainid,]
+#logistic model with PCs
+Credit.new.logit <- glm(DEFAULT ~ LIMIT_BAL + SEX + EDUCATION + MARRIAGE + AGE + PC1 + PC2, data=train2, family='binomial')
+summary(Credit.new.logit)
+
+library(knitr)
+
+##Find the optimal cutpoint for new model
+train2$prob <- predict(Credit.new.logit, train2, type = "response")
+train2$pred <- ifelse(train2$prob > 0.5, 1,0)
+test2$prob <- predict(Credit.new.logit, test2, type = "response")
+test2$pred <- ifelse(test2$prob > 0.5, 1,0)
+
+optCutOff.summary2 <- optimal.cutpoints(X="prob", status="DEFAULT", data=train2, tag.healthy='0', methods='MaxKappa')
+
+#optimal cutpoint
+optCutOff2 <- optCutOff.summary2$MaxKappa$Global$optimal.cutoff$cutoff
+optCutOff2
+
+#Kappa Statistic
+kappa  <- kappa(actual = test$DEFAULT , predicted = test$pred , cutoff =  optCutOff )
+kappa2 <- kappa(actual = test2$DEFAULT, predicted = test2$pred, cutoff =  optCutOff2)
+
+#Brier Score
+brierScore  <- mean((test$prob-test$DEFAULT)^2)
+brierScore2 <- mean((test2$prob-test2$DEFAULT)^2)
+
+#AUC
+AUC <- as.data.frame(optCutOff.summary$MaxKappa$Global$measures.acc$AUC)
+AUC <- AUC[1,1]
+
+AUC2 <- as.data.frame(optCutOff.summary2$MaxKappa$Global$measures.acc$AUC)
+AUC2 <- AUC2[1,1]
+
+#Accuracy
+library(MLmetrics)
+ac  <- Accuracy(test$pred , test$DEFAULT )
+ac2 <- Accuracy(test2$pred, test2$DEFAULT)
+
+#AIC
+AIC.1 <- AIC(Credit.logit)
+AIC.2 <- AIC(Credit.new.logit)
+
+#Create summary table
+compare.table <- data.frame(Modname = c("Model without PCs", "Model with PCs"),
+                            Kappa = c(kappa, kappa2),
+                            Brier_Score = c(brierScore, brierScore2),
+                            AUC = c(ac, ac2),
+                            Accuracy = c(ac, ac2),
+                            AIC = c(AIC.1, AIC.2))
+kable(compare.table)
+
+##Bonus
+#a
+Credit$EDUCATION.Ord <- factor(Credit$EDUCATION, ordered = TRUE)
+#b
+#Elastic net logistic regression model
+library(glmnet)
+library(tidyverse)
+
+Credit.net <-Credit.new
+
+Credit.net$DEFAULT1 <- NULL
+Credit.net[,7:12] <- NULL
+Credit.net$EDUCATION <- NULL
+Credit.net$ID <- NULL
+
+
+
+#split data
+set.seed(1)
+trainid3 <- sample(1:nrow(Credit.net), size = 20000)
+train3 <- Credit.net[trainid3,]
+test3 <- Credit.net[-trainid3,]
+
+train.X <- model.matrix(DEFAULT~., train3)[,-17]
+train.y <- as.factor(train3$DEFAULT)
+
+test.X <- model.matrix(DEFAULT~., test3)[,-17]
+test.y <- test3$DEFAULT
+
+##Specify that we want repeated 10-fold CV
+tcontrol <- trainControl(method="repeatedcv", number=10, repeats=5)
+
+##Define the grid of alpha and lambda values to check
+##Cut down on the length and spread of the lambda values
+tuneParam <- expand.grid(alpha = seq(0.1, 1, 0.1), lambda = 10^seq(2, -2, length=25))
+
+Credit.Elastic <- train(train.X, train.y, trControl=tcontrol, method="glmnet", tuneGrid=tuneParam)
+
+#Coef Plot
+en.final <- Credit.Elastic$finalModel
+coefs <- coef(en.final, alpha=en.all$bestTune$alpha, s=Credit.Elastic$bestTune$lambda)
+
+coef_frame <- data.frame(coef = rownames(coefs)[-1],
+                        value = coefs[-1,1])
+
+ggplot(coef_frame, aes(x=coef, y=value)) + 
+  geom_pointrange(aes(ymin=0, ymax=value), col = "black", fill = "blue") + 
+  ggtitle("Coefficients of Elastic Net Model") + 
+  coord_flip() +
+  theme_bw()
+```

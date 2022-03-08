@@ -1,0 +1,508 @@
+---
+title: "Data Assignment 2"
+author: "Yichien Chou"
+date: "2020/3/3"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data Preparation
+
+# #A
+```{r, echo=FALSE}
+D1 <- read.csv('/Users/jason13nn/Desktop/SMU/Spring 2020/STAT 6302 (Experimental Statistics)/data assignments/DA2/STARD Demo 1.csv')
+D2 <- read.csv('/Users/jason13nn/Desktop/SMU/Spring 2020/STAT 6302 (Experimental Statistics)/data assignments/DA2/STARD Demo 2.csv')
+DM <- merge(D1, D2, by = "ID")
+```
+First, merge the two demographic files into a single data frame by ID. There were 4,040 observations and 16 variables in the data frame. 
+
+# #B
+```{r, echo = F, message=F}
+QIDS <- read.csv("/Users/jason13nn/Desktop/SMU/Spring 2020/STAT 6302 (Experimental Statistics)/data assignments/DA2/STARD QIDS.csv")
+
+#subjects with at least 3 visits
+counts <- data.frame(table(QIDS$ID))
+counts <- subset(counts, Freq>=3)
+QIDS.3 <- subset(QIDS, ID %in% counts$Var1)
+
+#remove non-integer weeks
+QIDS.3$WEEK1 <- ifelse(QIDS.3$WEEK%%1==0 ,1,0)
+QIDS.3 <- subset(QIDS.3, WEEK1==1)
+
+#frequent table
+counts <- subset(counts, Var1 %in% QIDS.3$ID)
+table(counts$Freq)
+```
+Table 1 counted the number of observations per subject in the QIDS file. I restricted our analyses to subjects who had at least 3 visits, and I removed any visits that have ".1" in them. From table 1, we can see there were 2,691 patients had 4 weeks in study, and 2,619 patients had 6 weeks in study. For 9, 12, and 14 weeks in study, there were 2,219, 1,535, and 824 patients, respectively. 
+
+# #C
+```{r, echo=F, results= 'asis', message=FALSE, warning=FALSE}
+#ID only in QIDS.3
+DM3 <- subset(DM, ID %in% QIDS.3$ID)
+
+#transfer "-5" into "-3"
+DM3$DEP <- ifelse(DM3$DEP==-5,-3,DM3$DEP)
+DM3$BIP <- ifelse(DM3$BIP==-5,-3,DM3$BIP)
+DM3$ALCOHOL <- ifelse(DM3$ALCOHOL==-5,-3,DM3$ALCOHOL)
+DM3$DRUG_PHX <- ifelse(DM3$DRUG_PHX==-5,-3,DM3$DRUG_PHX)
+DM3$SUIC_PHX <- ifelse(DM3$SUIC_PHX==-5,-3,DM3$SUIC_PHX)
+
+#delete unreasonable observations
+DM3$dage <- ifelse(DM3$dage < 0, NA, DM3$dage)
+DM3$epino <- ifelse(DM3$epino < 0, NA, DM3$epino)
+
+
+#convert categorical variables
+DM3$SEX <- factor(DM3$SEX, levels = c(1, 2), labels = c("Male", "Female"))
+DM3$HSPNC <- factor(DM3$HSPNC)
+DM3$WHITE <- factor(DM3$WHITE)
+DM3$BLACK <- factor(DM3$BLACK)
+DM3$ASIAN <- factor(DM3$ASIAN)
+DM3$AMIND <- factor(DM3$AMIND)
+DM3$HAWAI <- factor(DM3$HAWAI)
+DM3$DEP <- factor(DM3$DEP)
+DM3$BIP <- factor(DM3$BIP)
+DM3$ALCOHOL <- factor(DM3$ALCOHOL)
+DM3$DRUG_PHX <- factor(DM3$DRUG_PHX)
+DM3$SUIC_PHX <- factor(DM3$SUIC_PHX)
+
+#dim(DM3)
+
+#summary table 
+library(devtools)
+library(papeR)
+
+library("knitr")
+kable(summarize(subset(DM3, select = -ID), type = "numeric"))
+kable(summarize(subset(DM3, select = -ID), type = "factor"))
+
+```
+
+Some categorical variables contained some levels which were not defined such as `DEP`, `BIP`, `ALCOHOL`, ` DRUG_PHX`, and `SUIC_PHX`, had a level named "-5". However, I could not found the definition of "-5" in description. Thus, I treated them as "-3", which was "unknown". Furthermore, it did not make sense that the age and number of episodes were smaller than 0. Consequently, I replaced all negative numbers in `dage` and `epino` with missing value.
+Table 2 shows the statistics for continuous variables, and the percentage of observations in each category. After removing problematic observations, there were 3,304 observations and 16 variables (including ID) in the dataset.
+
+# #D
+In the dataset, most of observations were Caucasians (79.96%). Other races were Hispanic (12.41%), African-American(17.71%), Asian(2.63%), American Indian (2.63%), and Hawaiian(1.11%). Note that subjects were allowed to select multiple races. In this situation, I would like to collapse race variables. 
+
+There were six race varaibles, `HSPNC`, `WHITE`, `BLACK`, `ASIAN`, `AMIND`, and `HAWAI`. Now, I would combined these variables into a new binary variable called `RACE`. The new variable had 2 levels, 0="White", 1="Non-White". Note that if a patient selected "Caucasian" and other races at the same time, he / she would be classified as "Non-White". 
+
+```{r, echo=F}
+#collapsed race variable
+DM3$RACE[DM3$WHITE==1] <- 0
+DM3$RACE[DM3$BLACK==1] <- 1
+DM3$RACE[DM3$HSPNC==1] <- 1
+DM3$RACE[DM3$ASIAN==1] <- 1
+DM3$RACE[DM3$AMIND==1] <- 1
+DM3$RACE[DM3$HAWAI==1] <- 1
+
+DM3$RACE <- factor(DM3$RACE, levels = c(0, 1), labels = c("White", "Nonwhite"))
+
+DM3[,11:16] <- NULL
+
+#table(DM3$RACE)
+```
+The `RACE` variable had 2,185 (66.13%) whites and 1,119 (33.87%) non-whites.
+
+# #E
+```{r, echo=F}
+#create a new variable
+DM3$Any.Fam.Psyc.Hist <- ifelse(DM3$DEP=="1"|DM3$BIP=="1"|DM3$ALCOHOL=="1"|DM3$DRUG_PHX=="1"|DM3$SUIC_PHX == "1",1,0)
+DM3$Any.Fam.Psyc.Hist <- factor(DM3$Any.Fam.Psyc.Hist, levels = c(0, 1), labels = c("No", "Yes"))
+
+#table(DM3$Any.Fam.Psyc.Hist)
+```
+In the last step of data preparation, I created a new variable `Any.Fam.Psyc.Hist`, which defined whether the patients had family history of psychiatric illness. There were 920 patients who had no family history of psychiatric illness, and 2,384 patients who had family history of psychiatric illness
+
+##Data Exploration
+```{r, echo=F, message=FALSE, warning=FALSE}
+library(ggplot2)
+##For convenience, make default theme = theme_bw()
+##And store the formatted x and y axis values
+theme_set(theme_bw())
+myX <- scale_x_continuous(breaks = 4:14, name = "Number of weeks in study")
+myY <- scale_y_continuous(name = "Total QIDS score")
+
+#merge QIDS.3 and DM3
+QIDS.M <- merge(QIDS.3, DM3, by = "ID")
+QIDS.M[,5] <- NULL
+QIDS.M[,8:12] <- NULL
+```
+# #A
+```{r, echo=F, message=FALSE, warning=FALSE}
+#select 100 subjects randomly
+set.seed(123)
+RQIDS.M <- subset(QIDS.M, ID %in% sample(unique(QIDS.M$ID), size = 100))
+
+#spaghetti plot
+g1 <- ggplot(data = RQIDS.M, aes(x = WEEK, y =QSTOT, group = ID)) + 
+geom_line() + myX + myY
+print(g1)
+```
+
+# #B
+```{r, echo=F, message=FALSE, warning=FALSE}
+#LOESS curves
+g2 <- ggplot(data = QIDS.M, aes(x = jitter(WEEK), y = QSTOT)) +  stat_smooth(se = FALSE)  +  myX + myY
+print(g2)
+```
+
+# #C
+```{r, echo=F, message=FALSE, warning=FALSE}
+#facet plots
+g3 <- ggplot(data = QIDS.M, aes(x = WEEK, y = QSTOT)) +
+  geom_line(aes(group=ID)) +
+  scale_linetype(name = "Gender") + scale_shape(name = "Gender", solid = FALSE) +
+  stat_smooth(se = FALSE, aes(x=jitter(WEEK), y=QSTOT)) +
+  facet_grid(. ~ SEX) + myX + myY 
+print(g3)
+```
+
+# #D
+```{r, echo=F, message=FALSE, warning=FALSE}
+g4 <- ggplot(data = QIDS.M, aes(x = WEEK, y = QSTOT)) +
+  stat_summary(fun.y = mean, aes(linetype = RACE), geom = "line") +
+  stat_summary(fun.y = mean, aes(shape = RACE), geom = "point", size = 3) +
+  stat_smooth(se = FALSE, aes(x=jitter(WEEK), y=QSTOT)) +
+  scale_linetype(name = "Race") + scale_shape(name = "Race", solid = FALSE) +
+  facet_grid(. ~ RACE) + myX + myY
+print(g4)
+```
+
+# #E
+```{r, echo=F, message=FALSE, warning=FALSE}
+g5 <- ggplot(data = QIDS.M, aes(x = WEEK , y = QSTOT)) +  
+  facet_wrap(~ cut_number(episode_date, n = 3)) +
+  geom_line(aes(group=ID)) +
+  stat_smooth(se = FALSE, aes(x=jitter(WEEK), y=QSTOT)) +
+  myX + myY
+print(g5)
+```
+
+# #F
+```{r, echo=F, message=FALSE, warning=FALSE}
+g6 <- ggplot(data = QIDS.M, aes(x = WEEK , y = QSTOT)) +  
+  stat_smooth(se = FALSE, aes(x=jitter(WEEK), y=QSTOT)) +
+  facet_grid(. ~ SEX) + 
+  stat_smooth(group = 1, se = FALSE, lwd = 1) +
+  stat_summary(fun.y = mean, aes(linetype = cut_number(episode_date, n = 3)), geom = "line") +
+  stat_summary(fun.y = mean, aes(shape = cut_number(episode_date, n = 3)), geom = "point", size = 3) +
+  scale_linetype(name = "episode") + scale_shape(name = "episode", solid = FALSE) 
+print(g6)
+```
+
+##Data Analysis
+
+# #A
+```{r, echo=F, message=FALSE, warning=FALSE}
+library(lme4)
+model1 <- lmer(QSTOT ~ WEEK +  ( 1 + WEEK | ID ), data = QIDS.M, REML = FALSE)
+kable(summary(model1))
+```
+
+Fixed effects indicated that the predicted QIDS score was 11.049 for patients whose number of weeks in study was 0. As week increased, we expected on average that the QIDS score would decrease by 0.290 points.
+Random effects correlation is -0.45; this means that in general those with lower intercepts have higher slopes.
+
+# #B
+```{r, echo=F, message=FALSE, warning=FALSE}
+model2 <- lmer(QSTOT ~ WEEK + SEX + RACE + dage + epino + Any.Fam.Psyc.Hist + ( 1 + WEEK | ID ), data = QIDS.M, REML = FALSE)
+kable(summary(model2))
+```
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+library(AICcmodavg)
+
+##Multimodel inference
+mynames <- paste("Model", as.character(1:2), sep = "")
+mymodels <- list(model1, model2)
+myaicc <- as.data.frame(aictab(cand.set = mymodels, modnames = mynames,
+sort = FALSE)[,-c(5,7)])
+myaicc$Eratio <- max(myaicc$AICcWt) / myaicc$AICcWt
+kable(data.frame(Modnames = myaicc$Modnames, round(myaicc[,-1], 2)))
+```
+
+Compared to two models, the full model had lower value of delta than the reduced model. The full model also had better weight of evidence (closer to 1 is the best) and evidence ratio (lower odds is better). Thus, full model was more plausible than reduced model. Note that AIC is affected by sample size, and deviance is affected by the number of parameters.
+
+# #C
+```{r, echo=F, message=FALSE, warning=FALSE}
+model3 <- lmer(QSTOT ~ WEEK + SEX + Any.Fam.Psyc.Hist + ( 1 + WEEK | ID ), data = QIDS.M, REML = FALSE)
+kable(summary(model3))
+```
+
+Compared to the model in part b, I thought it is appropiate to remove `dage` and `epino` due to small coefficients. I picked `WEEK`, `SEX`, and ` Any.Fam.Psyc.Hist` into the model according to the value of coefficients. 
+
+##Report
+
+# #A
+
+```{r, echo=FALSE}
+##Multimodel inference
+mynames <- paste("Model", as.character(1:3), sep = "")
+mymodels <- list(model1, model2, model3)
+myaicc <- as.data.frame(aictab(cand.set = mymodels, modnames = mynames,
+sort = FALSE)[,-c(5,7)])
+myaicc$Eratio <- max(myaicc$AICcWt) / myaicc$AICcWt
+kable(data.frame(Modnames = myaicc$Modnames, round(myaicc[,-1], 2)))
+```
+
+From table, *model 2* had the lowest value of delta and preferable value of weight of evidence and evidence ratio. Therefore, I picked *model 2* as final model.
+
+```{r, echo=FALSE}
+##Create table of model fit statistics
+mynames <- paste("Model", as.character(1:3), sep = "")
+mymodels <- list(model1, model2, model3)
+myaicc <- as.data.frame(aictab(cand.set = mymodels, modnames = mynames,
+sort = FALSE)[,-c(5,7)])
+myaicc$Eratio <- max(myaicc$AICcWt) / myaicc$AICcWt
+kable(data.frame(Modnames = myaicc$Modnames, round(myaicc[,-1], 2)))
+```
+
+```{r, echo=FALSE}
+##Extract fixed effects from model 2
+mytab <- as.data.frame(coef(summary(model2)))
+kable(mytab)
+```
+
+```{r, echo=FALSE}
+
+##Create data frame for graphing raw data with fitted values
+##Specifically, observe means (points) and fitted curves (lines) for risk groups
+plotdata <- model2@frame
+plotdata$pred <- model.matrix(model2) %*% fixef(model2)
+```
+
+Table showed the fitted values for this model.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#select 25 subjects randomly
+set.seed(123)
+plotdata <- subset(plotdata, ID %in% sample(unique(plotdata$ID), size = 25))
+
+##Plot data
+g1 <- ggplot(plotdata, aes(x = WEEK, y = QSTOT)) 
+g2 <- g1 + stat_summary(fun.y = "mean", geom = "point")
+g3 <- g2 + stat_summary(aes(y = pred), fun.y = "mean", geom = "line", colour = "red")
+g4 <- g3 + myX + theme(legend.background = element_blank(), 
+legend.box.background = element_rect(colour = "black"), legend.position="bottom") +
+      facet_grid(. ~ ID) 
+print(g4)
+```
+
+
+# #B
+
+The Sequenced Treatment Alternatives to Relieve Depression (STAR*D) study was designed to assess effectiveness of treatments in generalizable samples and ensure the delivery of adequate treatments. The study aimed to define the symptomatic outcomes for outpatients with nonpsychotic major depressive disorder treated initially with citalopram, a prototype of selective serotonin reuptake inhibitors (SSRIs). 
+STAR*D also aimed to evaluate moderators of symptom remission. (Trivedi et al, 2006)
+
+The subjects are the patients who was seeking medical care in routine medical or psychiatric outpatient treatment and those with at least 3 visits. 
+
+
+
+#Appendix
+
+```{r, eval=FALSE}
+###Data Preparation###
+###1A###
+D1 <- read.csv('/Users/jason13nn/Desktop/SMU/Spring 2020/STAT 6302 (Experimental Statistics)/data assignments/DA2/STARD Demo 1.csv')
+D2 <- read.csv('/Users/jason13nn/Desktop/SMU/Spring 2020/STAT 6302 (Experimental Statistics)/data assignments/DA2/STARD Demo 2.csv')
+DM <- merge(D1, D2, by = "ID")
+
+QIDS <- read.csv("/Users/jason13nn/Desktop/SMU/Spring 2020/STAT 6302 (Experimental Statistics)/data assignments/DA2/STARD QIDS.csv")
+
+###1B###
+#subjects with at least 3 visits
+counts <- data.frame(table(QIDS$ID))
+counts <- subset(counts, Freq>=3)
+QIDS.3 <- subset(QIDS, ID %in% counts$Var1)
+
+#remove non-integer weeks
+QIDS.3$WEEK1 <- ifelse(QIDS.3$WEEK%%1==0 ,1,0)
+QIDS.3 <- subset(QIDS.3, WEEK1==1)
+
+#frequent table
+counts <- subset(counts, Var1 %in% QIDS.3$ID)
+table(counts$Freq)
+
+###1C###
+#ID only in QIDS.3
+DM3 <- subset(DM, ID %in% QIDS.3$ID)
+
+#transfer "-5" into "-3"
+DM3$DEP <- ifelse(DM3$DEP==-5,-3,DM3$DEP)
+DM3$BIP <- ifelse(DM3$BIP==-5,-3,DM3$BIP)
+DM3$ALCOHOL <- ifelse(DM3$ALCOHOL==-5,-3,DM3$ALCOHOL)
+DM3$DRUG_PHX <- ifelse(DM3$DRUG_PHX==-5,-3,DM3$DRUG_PHX)
+DM3$SUIC_PHX <- ifelse(DM3$SUIC_PHX==-5,-3,DM3$SUIC_PHX)
+
+#delete unreasonable observations
+DM3$dage <- ifelse(DM3$dage < 0, NA, DM3$dage)
+DM3$epino <- ifelse(DM3$epino < 0, NA, DM3$epino)
+
+
+#convert categorical variables
+DM3$SEX <- factor(DM3$SEX, levels = c(1, 2), labels = c("Male", "Female"))
+DM3$HSPNC <- factor(DM3$HSPNC)
+DM3$WHITE <- factor(DM3$WHITE)
+DM3$BLACK <- factor(DM3$BLACK)
+DM3$ASIAN <- factor(DM3$ASIAN)
+DM3$AMIND <- factor(DM3$AMIND)
+DM3$HAWAI <- factor(DM3$HAWAI)
+DM3$DEP <- factor(DM3$DEP)
+DM3$BIP <- factor(DM3$BIP)
+DM3$ALCOHOL <- factor(DM3$ALCOHOL)
+DM3$DRUG_PHX <- factor(DM3$DRUG_PHX)
+DM3$SUIC_PHX <- factor(DM3$SUIC_PHX)
+
+#dim(DM3)
+
+#summary table 
+library(devtools)
+library(papeR)
+
+library("knitr")
+kable(summarize(subset(DM3, select = -ID), type = "numeric"))
+kable(summarize(subset(DM3, select = -ID), type = "factor"))
+
+###1D###
+#collapsed race variable
+DM3$RACE[DM3$WHITE==1] <- 0
+DM3$RACE[DM3$BLACK==1] <- 1
+DM3$RACE[DM3$HSPNC==1] <- 1
+DM3$RACE[DM3$ASIAN==1] <- 1
+DM3$RACE[DM3$AMIND==1] <- 1
+DM3$RACE[DM3$HAWAI==1] <- 1
+
+DM3$RACE <- as.factor(DM3$RACE)
+
+DM3[,11:16] <- NULL
+
+#table(DM3$RACE)
+
+###1E###
+#create a new variable
+DM3$Any.Fam.Psyc.Hist <- ifelse(DM3$DEP=="1"|DM3$BIP=="1"|DM3$ALCOHOL=="1"|DM3$DRUG_PHX=="1"|DM3$SUIC_PHX == "1",1,0)
+DM3$Any.Fam.Psyc.Hist <- factor(DM3$Any.Fam.Psyc.Hist, levels = c(0, 1), labels = c("No", "Yes"))
+
+#table(DM3$Any.Fam.Psyc.Hist)
+
+###Data Exploration###
+library(ggplot2)
+##For convenience, make default theme = theme_bw()
+##And store the formatted x and y axis values
+theme_set(theme_bw())
+myX <- scale_x_continuous(breaks = 4:14, name = "Number of weeks in study")
+myY <- scale_y_continuous(name = "Total QIDS score")
+
+#merge QIDS.3 and DM3
+QIDS.M <- merge(QIDS.3, DM3, by = "ID")
+QIDS.M[,5] <- NULL
+QIDS.M[,8:12] <- NULL
+
+###2A###
+#select 100 subjects randomly
+set.seed(123)
+RQIDS.M <- subset(QIDS.M, ID %in% sample(unique(QIDS.M$ID), size = 100))
+
+#spaghetti plot
+g1 <- ggplot(data = RQIDS.M, aes(x = WEEK, y =QSTOT, group = ID)) + 
+geom_line() + myX + myY
+print(g1)
+
+###2B###
+#LOESS curves
+g2 <- ggplot(data = QIDS.M, aes(x = jitter(WEEK), y = QSTOT)) +  stat_smooth(se = FALSE)  +  myX + myY
+print(g2)
+
+###2C###
+#facet plots
+g3 <- ggplot(data = QIDS.M, aes(x = WEEK, y = QSTOT)) +
+  geom_line(aes(group=ID)) +
+  scale_linetype(name = "Gender") + scale_shape(name = "Gender", solid = FALSE) +
+  stat_smooth(se = FALSE, aes(x=jitter(WEEK), y=QSTOT)) +
+  facet_grid(. ~ SEX) + myX + myY 
+print(g3)
+
+###2D###
+g4 <- ggplot(data = QIDS.M, aes(x = WEEK, y = QSTOT)) +
+  stat_summary(fun.y = mean, aes(linetype = RACE), geom = "line") +
+  stat_summary(fun.y = mean, aes(shape = RACE), geom = "point", size = 3) +
+  stat_smooth(se = FALSE, aes(x=jitter(WEEK), y=QSTOT)) +
+  scale_linetype(name = "Race") + scale_shape(name = "Race", solid = FALSE) +
+  facet_grid(. ~ RACE) + myX + myY
+print(g4)
+
+###2E###
+g5 <- ggplot(data = QIDS.M, aes(x = WEEK , y = QSTOT)) +  
+  facet_wrap(~ cut_number(episode_date, n = 3)) +
+  geom_line(aes(group=ID)) +
+  stat_smooth(se = FALSE, aes(x=jitter(WEEK), y=QSTOT)) +
+  myX + myY
+print(g5)
+
+###2F###
+g6 <- ggplot(data = QIDS.M, aes(x = WEEK , y = QSTOT)) +  
+  stat_smooth(se = FALSE, aes(x=jitter(WEEK), y=QSTOT)) +
+  facet_grid(. ~ SEX) + 
+  stat_smooth(group = 1, se = FALSE, lwd = 1) +
+  stat_summary(fun.y = mean, aes(linetype = cut_number(episode_date, n = 3)), geom = "line") +
+  stat_summary(fun.y = mean, aes(shape = cut_number(episode_date, n = 3)), geom = "point", size = 3) +
+  scale_linetype(name = "episode") + scale_shape(name = "episode", solid = FALSE) 
+print(g6)
+
+###Data Analysis###
+###3A###
+library(lme4)
+model1 <- lmer(QSTOT ~ WEEK +  ( 1 + WEEK | ID ), data = QIDS.M, REML = FALSE)
+summary(model1)
+
+###3B###
+model2 <- lmer(QSTOT ~ WEEK + SEX + RACE + dage + epino + Any.Fam.Psyc.Hist + ( 1 + WEEK | ID ), data = QIDS.M, REML = FALSE)
+summary(model2)
+
+library(AICcmodavg)
+
+##Multimodel inference
+mynames <- paste("Model", as.character(1:2), sep = "")
+mymodels <- list(model1, model2)
+myaicc <- as.data.frame(aictab(cand.set = mymodels, modnames = mynames,
+sort = FALSE)[,-c(5,7)])
+myaicc$Eratio <- max(myaicc$AICcWt) / myaicc$AICcWt
+data.frame(Modnames = myaicc$Modnames, round(myaicc[,-1], 2))
+
+###3C###
+model3 <- lmer(QSTOT ~ WEEK + SEX + Any.Fam.Psyc.Hist + ( 1 + WEEK | ID ), data = QIDS.M, REML = FALSE)
+summary(model3)
+
+###Report###
+###4A###
+##Multimodel inference
+mynames <- paste("Model", as.character(1:3), sep = "")
+mymodels <- list(model1, model2, model3)
+myaicc <- as.data.frame(aictab(cand.set = mymodels, modnames = mynames,
+sort = FALSE)[,-c(5,7)])
+myaicc$Eratio <- max(myaicc$AICcWt) / myaicc$AICcWt
+data.frame(Modnames = myaicc$Modnames, round(myaicc[,-1], 2))
+
+##Extract fixed effects from model 2
+mytab <- as.data.frame(coef(summary(model2)))
+mytab
+
+##Create data frame for graphing raw data with fitted values
+##Specifically, observe means (points) and fitted curves (lines) for risk groups
+plotdata <- model2@frame
+plotdata$pred <- model.matrix(model2) %*% fixef(model2)
+
+#select 25 subjects randomly
+set.seed(123)
+plotdata <- subset(plotdata, ID %in% sample(unique(plotdata$ID), size = 25))
+
+##Plot data
+g1 <- ggplot(plotdata, aes(x = WEEK, y = QSTOT)) 
+g2 <- g1 + stat_summary(fun.y = "mean", geom = "point")
+g3 <- g2 + stat_summary(aes(y = pred), fun.y = "mean", geom = "line", colour = "red")
+g4 <- g3 + myX + theme(legend.background = element_blank(), 
+legend.box.background = element_rect(colour = "black"), legend.position="bottom")
+print(g4)
+```

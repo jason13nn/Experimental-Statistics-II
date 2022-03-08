@@ -1,0 +1,700 @@
+---
+title: "DA4"
+author: "Yichien Chou"
+date: "2020/4/22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+The goal of this assignment is to accurately predict NBA game outcomes using the machine learning algorithms discussed in class.You are not required write a formal report for this assignment(i.e. like an academic paper), though you may if you’d like. 
+
+# Data Preparation
+
+The raw data has 8,640 observations and 41 variables. The data are NBA game outcomes and statistics began with the 2014-2015 season and ended with the 2017-2018 season.
+
+## Split training and test sets
+
+```{r, echo=FALSE}
+NBA <- read.csv("/Users/jason13nn/Desktop/SMU/Spring 2020/STAT 6302 (Experimental Statistics)/files/nba_games_ma_student.csv")
+
+NBA.test <- subset(NBA, Season == "17-18")
+NBA.train <- subset(NBA, Season != "17-18")
+```
+
+First, I split the data into training and test sets by season (The 14-15, 15-16, and the 16-17 season for the training set; the 17-18 season for the test set). The training set had 6,480 observations, and the test set included 2,160 observations.
+
+## Feature Engineering
+
+_Rank_: I created a new variable according to their winning percentage from last season. The team had the highest winning percentage last season was 1, the team had the lowest winning percentage was 30. 
+
+```{r, echo=FALSE}
+#Table 1
+library(knitr)
+
+rank.tab <- data.frame(Team =c("ATL", "BOS", "BRK", "CHO", "CHI", "CLE", "DAL", "DEN",                                    "DET", "GSW", "HOU", "IND", "LAC", "LAL", "MEM", "MIA",                                    "MIL", "MIN", "NOP", "NYK", "OKC", "ORL", "PHI", "PHX",
+                               "POR", "SAC", "SAS", "TOR", "UTA", "WAS"),
+                       Season14.15 = c(2, 16, 18, 22, 9, 7, 10, 24, 23, 1, 3, 19, 4, 27,
+                                       5, 21, 15, 30, 13, 29, 14, 26, 28, 17, 8, 25, 6, 
+                                       11, 20, 12),
+                       Season15.16 = c(7, 8, 28, 9, 16, 3, 14, 21, 12, 1, 17, 11, 6, 29,
+                                       15, 10, 22, 26, 25, 24, 5, 20, 30, 27, 13, 23, 2, 
+                                       4, 19, 18),
+                       Season16.17 = c(11, 4, 30, 20, 15, 5, 22, 18, 19, 1, 3, 13, 6, 28,
+                                       12, 17, 14, 24, 21, 25, 10, 26, 27, 29, 16, 23, 2,
+                                       7, 8, 9),
+                       Season17.18 = c(27, 4, 23, 20, 24, 6, 28, 14, 19, 3, 1, 8, 18, 21,
+                                       29, 15, 16, 12, 9, 22, 10, 26, 5, 30, 7, 25, 13, 
+                                       2, 11, 17))
+kable(rank.tab)
+```
+
+*Table 1- New variable "rank"*
+
+```{r, echo=FALSE}
+##variable "rank""
+
+#training set
+for (i in 1:2160){
+  
+  NBA.train$rank = c(2,16,18,22,9,7,10,24,23,1,3,19,4,27,5,
+                    21,15,30,13,29,14,26,28,17,8,25,6,11,20,12)[as.numeric(NBA.train$Team)]
+                                                                 
+}
+
+for (i in 2161:4320){
+  
+  NBA.train$rank = c(7,8,28,9,16,3,14,21,12,1,17,11,6,29,15,
+                     10,22,26,25,24,5,20,30,27,13,23,2,4,19,18)[as.numeric(NBA.train$Team)]
+                                                                
+}
+
+for(i in 4321:nrow(NBA.train)){
+  
+  NBA.train$rank = c(11,4,30,20,15,5,22,18,19,1,3,13,6,28,12,
+                    17,14,24,21,25,10,26,27,29,16,23,2,7,8,9)[as.numeric(NBA.train$Team)]
+}
+
+#test set
+NBA.test$rank = c(27,4,23,20,24,6,28,14,19,3,1,8,18,21,29,15,
+                  16,12,9,22,10,26,5,30,7,25,13,2, 11,17)[as.numeric(NBA.test$Team)]
+```
+
+_AllStar_: The number of all-star players(Who attended the all-star game last season). I think the teams with all-star player(s) were more competitive than the ones who had no all-star player(s). References: [https://www.basketball-reference.com/leagues/NBA_2015_ratings.html](https://www.basketball-reference.com/leagues/NBA_2015_ratings.html).
+
+```{r, echo=FALSE}
+#Table 2
+library(knitr)
+
+allstar.tab <- data.frame(Team =c("ATL", "BOS", "BRK", "CHO", "CHI", "CLE", "DAL", "DEN",                                    "DET", "GSW", "HOU", "IND", "LAC", "LAL", "MEM", "MIA",                                    "MIL", "MIN", "NOP", "NYK", "OKC", "ORL", "PHI", "PHX",
+                               "POR", "SAC", "SAS", "TOR", "UTA", "WAS"),
+                       Season14.15 = c(1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 2, 2, 2, 1, 0, 3, 0,
+                                       1, 1, 1, 1, 0, 0, 0, 2, 0, 1, 1, 0, 1),
+                       Season15.16 = c(4, 0, 0, 0, 2, 2, 1, 0, 0, 2, 1, 0, 2, 1, 1, 2, 0,
+                                       0, 1, 1, 2, 0, 0, 0, 2, 1, 1, 1, 0, 1),
+                       Season16.17 =c(2, 1, 0, 0, 2, 1, 0, 0, 1, 3, 1, 1, 1, 1, 0, 2, 0,
+                                       0, 1, 1, 2, 0, 0, 0, 0, 1, 2, 2, 0, 1),
+                       Season17.18 = c(1, 1, 0, 1, 1, 3, 0, 0, 0, 4, 1, 1, 1, 0, 1, 0, 1,
+                                       0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 2, 1, 1))
+kable(allstar.tab)
+```
+
+*Table 2- New variable "allstar"*
+
+
+```{r, echo=FALSE}
+#variable "allstar"
+
+#training set
+for (i in 1:2160){
+  
+  NBA.train$allstar = c(1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 2, 2, 2, 1, 0, 3, 0,
+                        1, 1, 1, 1, 0, 0, 0, 2, 0, 1, 1, 0, 1)[as.numeric(NBA.train$Team)]
+                                                                 
+}
+
+for (i in 2161:4320){
+  
+  NBA.train$allstar = c(4, 0, 0, 0, 2, 2, 1, 0, 0, 2, 1, 0, 2, 1, 1, 2, 0,
+                       0, 1, 1, 2, 0, 0, 0, 2, 1, 1, 1, 0, 1)[as.numeric(NBA.train$Team)]
+                                                                
+}
+
+for(i in 4321:nrow(NBA.train)){
+  
+  NBA.train$allstar = c(2, 1, 0, 0, 2, 1, 0, 0, 1, 3, 1, 1, 1, 1, 0, 2, 0,
+                       0, 1, 1, 2, 0, 0, 0, 0, 1, 2, 2, 0, 1)[as.numeric(NBA.train$Team)]
+}
+
+#test set
+NBA.test$allstar = c(1, 1, 0, 1, 1, 3, 0, 0, 0, 4, 1, 1, 1, 0, 1, 0, 1,
+                     0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 2, 1, 1)[as.numeric(NBA.test$Team)]
+```
+
+## Principle Component 
+
+There were 34 numerical variables, they recorded the total points, rebounds, assists, etc. I applied principle component analysis to reduce dimension.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+#PCA
+library(factoextra)
+NBA.train.PCA <- prcomp(NBA.train[,8:41], center=T, scale=T) 
+NBA.test.PCA <- prcomp(NBA.test[,8:41], center=T, scale=T) 
+
+#Add PCs into data sets
+NBA.train$PC1 <- NBA.train.PCA$x[,1]
+NBA.train$PC2 <- NBA.train.PCA$x[,2]
+NBA.train$PC3 <- NBA.train.PCA$x[,3]
+NBA.train$PC4 <- NBA.train.PCA$x[,4]
+NBA.train$PC5 <- NBA.train.PCA$x[,5]
+NBA.train$PC6 <- NBA.train.PCA$x[,6]
+NBA.train$PC7 <- NBA.train.PCA$x[,7]
+NBA.train$PC8 <- NBA.train.PCA$x[,8]
+NBA.train$PC9 <- NBA.train.PCA$x[,9]
+NBA.train$PC10 <- NBA.train.PCA$x[,10]
+
+NBA.test$PC1 <- NBA.test.PCA$x[,1]
+NBA.test$PC2 <- NBA.test.PCA$x[,2]
+NBA.test$PC3 <- NBA.test.PCA$x[,3]
+NBA.test$PC4 <- NBA.test.PCA$x[,4]
+NBA.test$PC5 <- NBA.test.PCA$x[,5]
+NBA.test$PC6 <- NBA.test.PCA$x[,6]
+NBA.test$PC7 <- NBA.test.PCA$x[,7]
+NBA.test$PC8 <- NBA.test.PCA$x[,8]
+NBA.test$PC9 <- NBA.test.PCA$x[,9]
+NBA.test$PC10 <- NBA.test.PCA$x[,10]
+
+#Scree Plot
+fviz_eig(NBA.train.PCA)
+```
+
+*Figure 1- Scree plot for PCs*
+
+From figure 1, we can not see the obvious elbow. Thus, I decided on the number of principle components on the cumulative percentage of the variation. The first 10 principle components explained 83% of variation. Therefore, I kept the top 10 principle components. 
+
+```{r, echo=FALSE, eval=FALSE}
+#cumulative percentage of variation
+(VE <- NBA.train.PCA$sdev^2)
+PVE <- VE / sum(VE)
+round(PVE, 2)
+#The first 10 PCs explained 83% of variation.
+
+NBA.train.PCA$rotation[,1:10]
+```
+
+```{r, echo=FALSE}
+PCA.table <- data.frame(Principe_Component=c("PC1","PC2","PC3","PC4","PC5",
+                                             "PC6","PC7","PC8","PC9","PC10"),
+                        Description=c("Total points made", "Level of points made",
+                                      "Level of Fouls", "Level of Rebounds",
+                                      "Level of Free Throws", "Level of Turnovers and Steals", "Opponent's Defensive Ability", "Level of Steals", "Level of 3 point shots made",
+                                      "Offensive Ability"
+                                      ))
+
+kable(PCA.table)
+```
+
+*Table 3- Description of principle components*
+
+In the next step, I will put these principle components into the models and predict the game outcome.
+
+## Machine Learning
+
+In this step, I applied Random Forest, XGBoost, Support Vector Machines(SVM), and Neural Networks to build predictive models from the training set. Then I used them to predict the game outcome in the test set. Before building the models, I centered and scaled all the predictors. Then I used train function in R package "caret" to choose the tuning parameters associated with the best value automatically.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#Keep the predictors
+
+NBA.train.new <- NBA.train[,c(2, 5, 6, 7, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53)]
+NBA.test.new <- NBA.test[,c(2, 5, 6, 7, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53)]
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+##1. Random Forest
+
+library(caret)
+library(parallel)
+library(doParallel)
+
+start_time2 <- Sys.time()
+cl <- makePSOCKcluster(3)
+registerDoParallel(cl)
+
+mtryValues <-sqrt(ncol(NBA.train.new[,-4]))
+tunegrid <- expand.grid(.mtry=mtryValues)
+
+X_train <- model.matrix(WINorLOSS ~ ., data=NBA.train.new)
+y_train <- NBA.train.new$WINorLOSS
+X_test <- model.matrix(WINorLOSS ~ ., data=NBA.test.new)
+y_test <- NBA.test.new$WINorLOSS
+
+ctrl <- trainControl(method = "repeatedcv",
+                     classProbs = TRUE,
+                     repeats=5)
+
+set.seed(476)
+rf.fit <- train(x = X_train, y = y_train,
+               method = "rf",
+               tuneGrid = tunegrid,
+               metric = "Accuracy",
+               trControl = ctrl)
+
+stopCluster(cl)
+end_time2 <- Sys.time()
+end_time2 - start_time2
+
+##test accuracy
+rf.pred <- predict(rf.fit, X_test)
+
+rf.fit.acc <- confusionMatrix(data=rf.pred, reference=as.factor(y_test))
+
+acc.1 <- rf.fit.acc$overall['Accuracy']
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+start_time2 <- Sys.time()
+cl <- makePSOCKcluster(3)
+registerDoParallel(cl)
+
+#2. XGBoost
+library(xgboost)
+
+X_train <- model.matrix(WINorLOSS ~ ., data=NBA.train.new)
+y_train <- NBA.train.new$WINorLOSS
+X_test <- model.matrix(WINorLOSS ~ ., data=NBA.test.new)
+y_test <- NBA.test.new$WINorLOSS
+
+trnCtrl <- trainControl(method="cv", number=5, allowParallel = TRUE)
+
+#avoid error
+out <- matrix()
+
+set.seed(0)
+xgb.fit <- train(x=X_train, y=y_train, 
+method="xgbTree", trControl=trnCtrl)
+
+stopCluster(cl)
+end_time2 <- Sys.time()
+end_time2 - start_time2
+
+xgb.pred <- predict(xgb.fit, X_test)
+
+##Check test accuracy
+xgb.fit.acc <- confusionMatrix(data=xgb.pred, reference=as.factor(y_test))
+
+acc.2 <- xgb.fit.acc$overall['Accuracy']
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+start_time2 <- Sys.time()
+cl <- makePSOCKcluster(3)
+registerDoParallel(cl)
+
+# 3. Support Vector Machines
+
+library(kernlab)
+library(MLmetrics)
+
+X_train <- model.matrix(WINorLOSS ~ ., data=NBA.train.new)
+y_train <- NBA.train.new$WINorLOSS
+X_test <- model.matrix(WINorLOSS ~ ., data=NBA.test.new)
+y_test <- NBA.test.new$WINorLOSS
+
+ctrl <- trainControl(method = "repeatedcv",
+                     summaryFunction = multiClassSummary,
+                     classProbs = TRUE,
+                     savePredictions = TRUE)
+
+svmPGrid <-  expand.grid(degree = 1:3,
+                         scale = c(0.01, 0.005),
+                         C = 2^(seq(-6, -2, length = 10)))
+#avoid error
+out <- matrix()
+
+set.seed(476)
+svm.fit <- train(x = X_train, 
+                 y = y_train,
+                 method = "svmPoly",
+                 metric = "Kappa",
+                 preProc = c("center", "scale"),
+                 tuneGrid = svmPGrid,
+                 trControl = ctrl)
+
+stopCluster(cl)
+end_time2 <- Sys.time()
+end_time2 - start_time2
+
+##Check test accuracy
+svm.pred <- predict(svm.fit, X_test)
+svm.fit.acc <- confusionMatrix(data=svm.pred, 
+reference=as.factor(NBA.test.new$WINorLOSS))
+
+acc.3 <- svm.fit.acc$overall['Accuracy']
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+start_time2 <- Sys.time()
+cl <- makePSOCKcluster(3)
+registerDoParallel(cl)
+
+# 4. Neural Networks
+
+nnetGrid <- expand.grid(size = 1:10, decay = c(0, .1, 1, 2))
+maxSize <- max(nnetGrid$size)
+ctrl <- trainControl(method = "repeatedcv",
+                     summaryFunction = multiClassSummary,
+                     classProbs = TRUE,
+                     savePredictions = TRUE)
+
+set.seed(476)
+nnet.fit <- train(x = NBA.train.new[,-4], 
+                 y = NBA.train.new$WINorLOSS,
+                 method = "nnet",
+                 metric = "Kappa",
+                 preProc = c("center", "scale"),
+                 tuneGrid = nnetGrid,
+                 trace = FALSE,
+                 maxit = 2000,
+                 MaxNWts = 1*(maxSize * (ncol(NBA.train.new) + 1) + maxSize + 1),
+                 trControl = ctrl)
+
+stopCluster(cl)
+end_time2 <- Sys.time()
+end_time2 - start_time2
+
+##test accuracy
+nnet.pred <- predict(nnet.fit, NBA.test.new[,-4])
+
+nnet.fit.acc <- confusionMatrix(data=nnet.pred, reference=as.factor(NBA.test.new$WINorLOSS))
+
+acc.4 <- nnet.fit.acc$overall['Accuracy']
+```
+
+```{r, echo=FALSE}
+#Table 4
+all.acc.tab <- data.frame(Test_Accuracy = c(acc.1, acc.2,
+                                            acc.3, acc.4),
+                          Modeling_Method = c("Random Forest", "XGBoost",
+                                              "SVM", "Neural Networks"))
+kable(all.acc.tab)
+```
+
+*Table 4- Predicted Accuracy of each method*
+
+From Table 4, we can see the highest test accuracy occured when using XGBoost, it is 64.58%.
+
+
+## Appendix: R Code
+```{r, eval=FALSE}
+#Read and split data
+NBA <- read.csv("/Users/jason13nn/Desktop/SMU/Spring 2020/STAT 6302 (Experimental Statistics)/files/nba_games_ma_student.csv")
+
+NBA.test <- subset(NBA, Season == "17-18")
+NBA.train <- subset(NBA, Season != "17-18")
+
+#Table 1
+library(knitr)
+
+rank.tab <- data.frame(Team =c("ATL", "BOS", "BRK", "CHO", "CHI", "CLE", "DAL", "DEN",                                    "DET", "GSW", "HOU", "IND", "LAC", "LAL", "MEM", "MIA",                                    "MIL", "MIN", "NOP", "NYK", "OKC", "ORL", "PHI", "PHX",
+                               "POR", "SAC", "SAS", "TOR", "UTA", "WAS"),
+                       Season14.15 = c(2, 16, 18, 22, 9, 7, 10, 24, 23, 1, 3, 19, 4, 27,
+                                       5, 21, 15, 30, 13, 29, 14, 26, 28, 17, 8, 25, 6, 
+                                       11, 20, 12),
+                       Season15.16 = c(7, 8, 28, 9, 16, 3, 14, 21, 12, 1, 17, 11, 6, 29,
+                                       15, 10, 22, 26, 25, 24, 5, 20, 30, 27, 13, 23, 2, 
+                                       4, 19, 18),
+                       Season16.17 = c(11, 4, 30, 20, 15, 5, 22, 18, 19, 1, 3, 13, 6, 28,
+                                       12, 17, 14, 24, 21, 25, 10, 26, 27, 29, 16, 23, 2,
+                                       7, 8, 9),
+                       Season17.18 = c(27, 4, 23, 20, 24, 6, 28, 14, 19, 3, 1, 8, 18, 21,
+                                       29, 15, 16, 12, 9, 22, 10, 26, 5, 30, 7, 25, 13, 
+                                       2, 11, 17))
+kable(rank.tab)
+
+##variable "rank""
+
+#training set
+for (i in 1:2160){
+  
+  NBA.train$rank = c(2,16,18,22,9,7,10,24,23,1,3,19,4,27,5,
+                    21,15,30,13,29,14,26,28,17,8,25,6,11,20,12)[as.numeric(NBA.train$Team)]
+                                                                 
+}
+
+for (i in 2161:4320){
+  
+  NBA.train$rank = c(7,8,28,9,16,3,14,21,12,1,17,11,6,29,15,
+                     10,22,26,25,24,5,20,30,27,13,23,2,4,19,18)[as.numeric(NBA.train$Team)]
+                                                                
+}
+
+for(i in 4321:nrow(NBA.train)){
+  
+  NBA.train$rank = c(11,4,30,20,15,5,22,18,19,1,3,13,6,28,12,
+                    17,14,24,21,25,10,26,27,29,16,23,2,7,8,9)[as.numeric(NBA.train$Team)]
+}
+
+#test set
+NBA.test$rank = c(27,4,23,20,24,6,28,14,19,3,1,8,18,21,29,15,
+                  16,12,9,22,10,26,5,30,7,25,13,2, 11,17)[as.numeric(NBA.test$Team)]
+
+#Table 2
+library(knitr)
+
+allstar.tab <- data.frame(Team =c("ATL", "BOS", "BRK", "CHO", "CHI", "CLE", "DAL", "DEN",                                    "DET", "GSW", "HOU", "IND", "LAC", "LAL", "MEM", "MIA",                                    "MIL", "MIN", "NOP", "NYK", "OKC", "ORL", "PHI", "PHX",
+                               "POR", "SAC", "SAS", "TOR", "UTA", "WAS"),
+                       Season14.15 = c(1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 2, 2, 2, 1, 0, 3, 0,
+                                       1, 1, 1, 1, 0, 0, 0, 2, 0, 1, 1, 0, 1),
+                       Season15.16 = c(4, 0, 0, 0, 2, 2, 1, 0, 0, 2, 1, 0, 2, 1, 1, 2, 0,
+                                       0, 1, 1, 2, 0, 0, 0, 2, 1, 1, 1, 0, 1),
+                       Season16.17 =c(2, 1, 0, 0, 2, 1, 0, 0, 1, 3, 1, 1, 1, 1, 0, 2, 0,
+                                       0, 1, 1, 2, 0, 0, 0, 0, 1, 2, 2, 0, 1),
+                       Season17.18 = c(1, 1, 0, 1, 1, 3, 0, 0, 0, 4, 1, 1, 1, 0, 1, 0, 1,
+                                       0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 2, 1, 1))
+kable(allstar.tab)
+
+#variable "allstar"
+
+#training set
+for (i in 1:2160){
+  
+  NBA.train$allstar = c(1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 2, 2, 2, 1, 0, 3, 0,
+                        1, 1, 1, 1, 0, 0, 0, 2, 0, 1, 1, 0, 1)[as.numeric(NBA.train$Team)]
+                                                                 
+}
+
+for (i in 2161:4320){
+  
+  NBA.train$allstar = c(4, 0, 0, 0, 2, 2, 1, 0, 0, 2, 1, 0, 2, 1, 1, 2, 0,
+                       0, 1, 1, 2, 0, 0, 0, 2, 1, 1, 1, 0, 1)[as.numeric(NBA.train$Team)]
+                                                                
+}
+
+for(i in 4321:nrow(NBA.train)){
+  
+  NBA.train$allstar = c(2, 1, 0, 0, 2, 1, 0, 0, 1, 3, 1, 1, 1, 1, 0, 2, 0,
+                       0, 1, 1, 2, 0, 0, 0, 0, 1, 2, 2, 0, 1)[as.numeric(NBA.train$Team)]
+}
+
+#test set
+NBA.test$allstar = c(1, 1, 0, 1, 1, 3, 0, 0, 0, 4, 1, 1, 1, 0, 1, 0, 1,
+                     0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 2, 1, 1)[as.numeric(NBA.test$Team)]
+
+#PCA
+library(factoextra)
+NBA.train.PCA <- prcomp(NBA.train[,8:41], center=T, scale=T) 
+NBA.test.PCA <- prcomp(NBA.test[,8:41], center=T, scale=T) 
+
+#Add PCs into data sets
+NBA.train$PC1 <- NBA.train.PCA$x[,1]
+NBA.train$PC2 <- NBA.train.PCA$x[,2]
+NBA.train$PC3 <- NBA.train.PCA$x[,3]
+NBA.train$PC4 <- NBA.train.PCA$x[,4]
+NBA.train$PC5 <- NBA.train.PCA$x[,5]
+NBA.train$PC6 <- NBA.train.PCA$x[,6]
+NBA.train$PC7 <- NBA.train.PCA$x[,7]
+NBA.train$PC8 <- NBA.train.PCA$x[,8]
+NBA.train$PC9 <- NBA.train.PCA$x[,9]
+NBA.train$PC10 <- NBA.train.PCA$x[,10]
+
+NBA.test$PC1 <- NBA.test.PCA$x[,1]
+NBA.test$PC2 <- NBA.test.PCA$x[,2]
+NBA.test$PC3 <- NBA.test.PCA$x[,3]
+NBA.test$PC4 <- NBA.test.PCA$x[,4]
+NBA.test$PC5 <- NBA.test.PCA$x[,5]
+NBA.test$PC6 <- NBA.test.PCA$x[,6]
+NBA.test$PC7 <- NBA.test.PCA$x[,7]
+NBA.test$PC8 <- NBA.test.PCA$x[,8]
+NBA.test$PC9 <- NBA.test.PCA$x[,9]
+NBA.test$PC10 <- NBA.test.PCA$x[,10]
+
+#Scree Plot
+fviz_eig(NBA.train.PCA)
+
+#cumulative percentage of variation
+(VE <- NBA.train.PCA$sdev^2)
+PVE <- VE / sum(VE)
+round(PVE, 2)
+#The first 10 PCs explained 83% of variation.
+
+NBA.train.PCA$rotation[,1:10]
+
+PCA.table <- data.frame(Principe_Component=c("PC1","PC2","PC3","PC4","PC5",
+                                             "PC6","PC7","PC8","PC9","PC10"),
+                        Description=c("Total points made", "Level of points made",
+                                      "Level of Fouls", "Level of Rebounds",
+                                      "Level of Free Throws", "Level of Turnovers and Steals", "Opponent's Defensive Ability", "Level of Steals", "Level of 3 point shots made",
+                                      "Offensive Ability"
+                                      ))
+
+kable(PCA.table)
+
+#Keep the predictors
+
+NBA.train.new <- NBA.train[,c(2, 5, 6, 7, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53)]
+NBA.test.new <- NBA.test[,c(2, 5, 6, 7, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53)]
+
+##1. Random Forest
+
+library(caret)
+library(parallel)
+library(doParallel)
+
+start_time2 <- Sys.time()
+cl <- makePSOCKcluster(3)
+registerDoParallel(cl)
+
+mtryValues <-sqrt(ncol(NBA.train.new[,-4]))
+tunegrid <- expand.grid(.mtry=mtryValues)
+
+X_train <- model.matrix(WINorLOSS ~ ., data=NBA.train.new)
+y_train <- NBA.train.new$WINorLOSS
+X_test <- model.matrix(WINorLOSS ~ ., data=NBA.test.new)
+y_test <- NBA.test.new$WINorLOSS
+
+ctrl <- trainControl(method = "repeatedcv",
+                     classProbs = TRUE,
+                     repeats=5)
+
+set.seed(476)
+rf.fit <- train(x = X_train, y = y_train,
+               method = "rf",
+               tuneGrid = tunegrid,
+               metric = "Accuracy",
+               trControl = ctrl)
+
+stopCluster(cl)
+end_time2 <- Sys.time()
+end_time2 - start_time2
+
+##test accuracy
+rf.pred <- predict(rf.fit, X_test)
+
+rf.fit.acc <- confusionMatrix(data=rf.pred, reference=as.factor(y_test))
+
+acc.1 <- rf.fit.acc$overall['Accuracy']
+
+start_time2 <- Sys.time()
+cl <- makePSOCKcluster(3)
+registerDoParallel(cl)
+
+#2. XGBoost
+library(xgboost)
+
+X_train <- model.matrix(WINorLOSS ~ ., data=NBA.train.new)
+y_train <- NBA.train.new$WINorLOSS
+X_test <- model.matrix(WINorLOSS ~ ., data=NBA.test.new)
+y_test <- NBA.test.new$WINorLOSS
+
+trnCtrl <- trainControl(method="cv", number=5, allowParallel = TRUE)
+
+#avoid error
+out <- matrix()
+
+set.seed(0)
+xgb.fit <- train(x=X_train, y=y_train, 
+method="xgbTree", trControl=trnCtrl)
+
+stopCluster(cl)
+end_time2 <- Sys.time()
+end_time2 - start_time2
+
+xgb.pred <- predict(xgb.fit, X_test)
+
+##Check test accuracy
+xgb.fit.acc <- confusionMatrix(data=xgb.pred, reference=as.factor(y_test))
+
+acc.2 <- xgb.fit.acc$overall['Accuracy']
+
+start_time2 <- Sys.time()
+cl <- makePSOCKcluster(3)
+registerDoParallel(cl)
+
+# 3. Support Vector Machines
+
+library(kernlab)
+library(MLmetrics)
+
+X_train <- model.matrix(WINorLOSS ~ ., data=NBA.train.new)
+y_train <- NBA.train.new$WINorLOSS
+X_test <- model.matrix(WINorLOSS ~ ., data=NBA.test.new)
+y_test <- NBA.test.new$WINorLOSS
+
+ctrl <- trainControl(method = "repeatedcv",
+                     summaryFunction = multiClassSummary,
+                     classProbs = TRUE,
+                     savePredictions = TRUE)
+
+svmPGrid <-  expand.grid(degree = 1:3,
+                         scale = c(0.01, 0.005),
+                         C = 2^(seq(-6, -2, length = 10)))
+#avoid error
+out <- matrix()
+
+set.seed(476)
+svm.fit <- train(x = X_train, 
+                 y = y_train,
+                 method = "svmPoly",
+                 metric = "Kappa",
+                 preProc = c("center", "scale"),
+                 tuneGrid = svmPGrid,
+                 trControl = ctrl)
+
+stopCluster(cl)
+end_time2 <- Sys.time()
+end_time2 - start_time2
+
+##Check test accuracy
+svm.pred <- predict(svm.fit, X_test)
+svm.fit.acc <- confusionMatrix(data=svm.pred, 
+reference=as.factor(NBA.test.new$WINorLOSS))
+
+acc.3 <- svm.fit.acc$overall['Accuracy']
+
+start_time2 <- Sys.time()
+cl <- makePSOCKcluster(3)
+registerDoParallel(cl)
+
+# 4. Neural Networks
+
+nnetGrid <- expand.grid(size = 1:10, decay = c(0, .1, 1, 2))
+maxSize <- max(nnetGrid$size)
+ctrl <- trainControl(method = "repeatedcv",
+                     summaryFunction = multiClassSummary,
+                     classProbs = TRUE,
+                     savePredictions = TRUE)
+
+set.seed(476)
+nnet.fit <- train(x = NBA.train.new[,-4], 
+                 y = NBA.train.new$WINorLOSS,
+                 method = "nnet",
+                 metric = "Kappa",
+                 preProc = c("center", "scale"),
+                 tuneGrid = nnetGrid,
+                 trace = FALSE,
+                 maxit = 2000,
+                 MaxNWts = 1*(maxSize * (ncol(NBA.train.new) + 1) + maxSize + 1),
+                 trControl = ctrl)
+
+stopCluster(cl)
+end_time2 <- Sys.time()
+end_time2 - start_time2
+
+##test accuracy
+nnet.pred <- predict(nnet.fit, NBA.test.new[,-4])
+
+nnet.fit.acc <- confusionMatrix(data=nnet.pred, reference=as.factor(NBA.test.new$WINorLOSS))
+
+acc.4 <- nnet.fit.acc$overall['Accuracy']
+
+#Table 4
+all.acc.tab <- data.frame(Test_Accuracy = c(rf.fit.acc,xgb.fit.acc,
+                                            acc.3, acc.4),
+                          Modeling_Method = c("Random Forest", "XGBoost",
+                                              "SVM", "Neural Networks")
+kable(all.acc.tab)
+```
