@@ -1,0 +1,231 @@
+---
+title: "HW6"
+author: "Yichien Chou"
+date: "2020/4/11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r, echo=FALSE}
+train <- read.csv("/Users/jason13nn/Desktop/SMU/Spring 2020/STAT 6302 (Experimental Statistics)/files/cfb_short.csv")
+
+test <- read.csv("/Users/jason13nn/Desktop/SMU/Spring 2020/STAT 6302 (Experimental Statistics)/files/cfb_short_predict.csv")
+```
+
+# Part A
+
+```{r, message = FALSE, warning=FALSE, message=FALSE}
+#Regression tree
+library(caret)
+
+ctrl <- trainControl(method = "repeatedcv",
+                     classProbs = FALSE,
+                     number = 10,
+                     repeats=5,
+                     savePredictions = TRUE)
+
+set.seed(476)
+rpartFit <- train(x = train[, -41], 
+                  y = train[, 41],
+                  method = "rpart",
+                  tuneLength = 15,
+                  metric = "RMSE",
+                  trControl = ctrl)
+```
+
+# Part B
+
+```{r, echo=FALSE, message=FALSE}
+library(partykit)
+
+plot(as.party(rpartFit$finalModel))
+```
+
+# Part C
+
+```{r, echo=FALSE, message=FALSE}
+library(Metrics)
+
+#RMSE for training data
+RMSE_train_rt <- RMSE(train$PointsDiff, predict(rpartFit$finalModel, train))
+
+#RMSE for test data
+RMSE_test_rt <- RMSE(test$PointsDiff, predict(rpartFit$finalModel, test))
+
+cat("RMSE for training data:", RMSE_train_rt)
+cat("RMSE for test data:", RMSE_test_rt)
+```
+
+# Part D
+
+```{r, echo=FALSE, message=FALSE}
+library(parallel)
+library(foreach)
+library(doParallel)
+
+mtryValues <- c(2, 4, 6, 8, 10)
+
+detectCores()
+#4 cores
+
+start_time2 <- Sys.time()
+cl <- makePSOCKcluster(3)
+registerDoParallel(cl)
+set.seed(476)
+rfFit <- train(x = train[, -41], 
+               y = train[, 41],
+               method = "rf",
+               ntree = 500,
+               tuneGrid = data.frame(mtry = mtryValues),
+               importance = TRUE,
+               metric = "RMSE",
+               trControl = ctrl,
+               tuneLength = 5)
+
+stopCluster(cl)
+end_time2 <- Sys.time()
+end_time2 - start_time2
+```
+
+# Part E
+
+```{r, echo=FALSE, message=FALSE}
+library(knitr)
+
+#RMSE for training data
+RMSE_train_rf <- RMSE(train$PointsDiff, predict(rfFit, train))
+
+#RMSE for test data
+RMSE_test_rf <- RMSE(test$PointsDiff, predict(rfFit, test))
+
+cat("RMSE for training data:", RMSE_train_rf)
+cat("RMSE for test data:", RMSE_test_rf)
+
+d <- data.frame(Method = c("Regression Tree","Random Forest"),
+                RMSE_training_data = c(RMSE_train_rt, RMSE_train_rf),
+                RMSE_test_data = c(RMSE_test_rt, RMSE_test_rf))
+kable(d)
+```
+
+Compare to Regression tree, the RMSEs using random forest were smaller both training set and test set. Thus I prefer to use random forest in this case.
+
+# Part F
+
+```{r, echo=FALSE, message=FALSE}
+require(randomForest)
+varImpPlot(rfFit$finalModel)
+```
+
+# Part G
+
+```{r, echo=FALSE, message=FALSE}
+boost_models <- list(RegressionTree = rpartFit,
+                     RandomForest = rfFit)
+
+boost_resampling <- resamples(boost_models)
+summary(boost_resampling, metric = "RMSE")
+```
+
+Based on this method, the random forest model perform better than regression tree because of the lower RMSE.
+
+# Appendix: R Code
+```{r, eval= FALSE}
+#read dataset
+
+train <- read.csv("/Users/jason13nn/Desktop/SMU/Spring 2020/STAT 6302 (Experimental Statistics)/files/cfb_short.csv")
+
+test <- read.csv("/Users/jason13nn/Desktop/SMU/Spring 2020/STAT 6302 (Experimental Statistics)/files/cfb_short_predict.csv")
+
+#part A
+#Regression tree
+library(caret)
+
+ctrl <- trainControl(method = "repeatedcv",
+                     classProbs = FALSE,
+                     number = 10,
+                     repeats=5,
+                     savePredictions = TRUE)
+
+set.seed(476)
+rpartFit <- train(x = train[, -41], 
+                  y = train[, 41],
+                  method = "rpart",
+                  tuneLength = 15,
+                  metric = "RMSE",
+                  trControl = ctrl)
+
+library(partykit)
+
+#part B
+plot(as.party(rpartFit$finalModel))
+
+#part C
+library(Metrics)
+
+#RMSE for training data
+RMSE_train_rt <- RMSE(train$PointsDiff, predict(rpartFit$finalModel, train))
+
+#RMSE for test data
+RMSE_test_rt <- RMSE(test$PointsDiff, predict(rpartFit$finalModel, test))
+
+cat("RMSE for training data:", RMSE_train_rt)
+cat("RMSE for test data:", RMSE_test_rt)
+
+#part D
+library(parallel)
+library(foreach)
+library(doParallel)
+
+mtryValues <- c(2, 4, 6, 8, 10)
+
+detectCores()
+#4 cores
+
+start_time2 <- Sys.time()
+cl <- makePSOCKcluster(3)
+registerDoParallel(cl)
+set.seed(476)
+rfFit <- train(x = train[, -41], 
+               y = train[, 41],
+               method = "rf",
+               ntree = 500,
+               tuneGrid = data.frame(mtry = mtryValues),
+               importance = TRUE,
+               metric = "RMSE",
+               trControl = ctrl,
+               tuneLength = 5)
+
+stopCluster(cl)
+end_time2 <- Sys.time()
+end_time2 - start_time2
+
+#part E
+library(knitr)
+
+#RMSE for training data
+RMSE_train_rf <- RMSE(train$PointsDiff, predict(rfFit, train))
+
+#RMSE for test data
+RMSE_test_rf <- RMSE(test$PointsDiff, predict(rfFit, test))
+
+cat("RMSE for training data:", RMSE_train_rf)
+cat("RMSE for test data:", RMSE_test_rf)
+
+d <- data.frame(Method = c("Regression Tree","Random Forest"),
+                RMSE_training_data = c(RMSE_train_rt, RMSE_train_rf),
+                RMSE_test_data = c(RMSE_test_rt, RMSE_test_rf))
+kable(d)
+
+#part F
+require(randomForest)
+varImpPlot(rfFit$finalModel)
+
+#part G
+boost_models <- list(RegressionTree = rpartFit,
+                     RandomForest = rfFit)
+
+boost_resampling <- resamples(boost_models)
+summary(boost_resampling, metric = "RMSE")
+```

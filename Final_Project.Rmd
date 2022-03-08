@@ -1,0 +1,350 @@
+---
+title: "Final Project"
+author: "Yichien Chou"
+date: "2020/4/28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Data Description
+
+Expedia provided logs of customer behavior. These include what customers searched for, how they interacted with search results (click/book), whether or not the search result was a travel package. More details can be found [here](https://www.kaggle.com/c/expedia-hotel-recommendations/data).
+
+The data set has 37,670,293 observations and 24 variables. 
+
+# Data Preparation
+
+```{r, echo=FALSE}
+#Use ff package to read the large data set
+
+library(ff)
+hotel <-read.csv.ffdf(file = "/Users/jason13nn/Desktop/SMU/Spring 2020/STAT 6302 (Experimental Statistics)/Final Project/expedia-hotel-recommendations/expedia_hotel.csv")
+#Transform back to data frame
+hotel <- as.data.frame(hotel)
+
+dim(hotel)
+#37670293 24
+
+#randomly select 12,000 obs from the data set (6,000 for is_booking = 0, and 6,000 for is_booking = 1) for training set.
+set.seed(123)
+hotel_sampled1 <- hotel[sample(which(hotel$is_booking >0), 6000),]
+hotel_sampled2 <- hotel[sample(which(hotel$is_booking <1), 6000),]
+hotel.sample <- rbind(hotel_sampled1, hotel_sampled2)
+
+#randomly select 10,000 obs to the training set
+set.seed(999)
+hotel.train <- hotel.sample[sample(1:nrow(hotel.sample), 10000),]
+
+#The remained 2,000 obs to the test set
+hotel.test <- setdiff(hotel.sample, hotel.train)
+```
+
+# Pre-processing
+
+```{r, echo=FALSE}
+#See the number of NAs for each variable
+sapply(hotel.train, function(x) sum(is.na(x)))
+#3,492 NAs in orig_destination_distance
+
+#Impute missing values
+library(VIM)
+hotel.train$orig_destination_distance <- hotdeck(hotel.train$orig_destination_distance)
+hotel.train$orig_destination_distance.data_imp <- NULL
+hotel.train$orig_destination_distance <- hotel.train$orig_destination_distance$data
+
+#Factorize predictor
+hotel.train$site_name <- as.factor(hotel.train$site_name)
+hotel.train$posa_continent <- as.factor(hotel.train$posa_continent)
+hotel.train$user_location_country <- as.factor(hotel.train$user_location_country)
+hotel.train$user_location_region <- as.factor(hotel.train$user_location_region )
+hotel.train$user_location_city <- as.factor(hotel.train$user_location_city)
+hotel.train$is_mobile <- as.factor(hotel.train$is_mobile)
+hotel.train$is_package <- as.factor(hotel.train$is_package)
+hotel.train$channel <- as.factor(hotel.train$channel)
+hotel.train$srch_destination_id <- as.factor(hotel.train$srch_destination_id)
+hotel.train$srch_destination_type_id <- as.factor(hotel.train$srch_destination_type_id)
+hotel.train$is_booking <- as.factor(hotel.train$is_booking)
+hotel.train$hotel_continent <- as.factor(hotel.train$hotel_continent)
+hotel.train$hotel_country <- as.factor(hotel.train$hotel_country)
+hotel.train$hotel_market <- as.factor(hotel.train$hotel_market)
+hotel.train$hotel_cluster <- as.factor(hotel.train$hotel_cluster)
+
+#date predictors (Keep srch_ci and transform into year and month)
+hotel.train$srch_ci <- as.Date(hotel.train$srch_ci)
+hotel.train$srch_ci <- as.POSIXlt(hotel.train$srch_ci)
+hotel.train$year <- hotel.train$srch_ci$year + 1900
+hotel.train$month  <- hotel.train$srch_ci$mon  + 1
+
+hotel.train <- na.omit(hotel.train)
+#9,994 obs left
+
+#There were 15 categorical variables (including response), 3 date variables, and 5 continuous variables, the 24th was ID.
+
+#Repeat on test set
+sapply(hotel.test, function(x) sum(is.na(x)))
+#730 NAs
+
+hotel.test$orig_destination_distance <- hotdeck(hotel.test$orig_destination_distance)
+hotel.test$orig_destination_distance.data_imp <- NULL
+hotel.test$orig_destination_distance <- hotel.test$orig_destination_distance$data
+
+#Factorize predictor
+hotel.test$site_name <- as.factor(hotel.test$site_name)
+hotel.test$posa_continent <- as.factor(hotel.test$posa_continent)
+hotel.test$user_location_country <- as.factor(hotel.test$user_location_country)
+hotel.test$user_location_region <- as.factor(hotel.test$user_location_region )
+hotel.test$user_location_city <- as.factor(hotel.test$user_location_city)
+hotel.test$is_mobile <- as.factor(hotel.test$is_mobile)
+hotel.test$is_package <- as.factor(hotel.test$is_package)
+hotel.test$channel <- as.factor(hotel.test$channel)
+hotel.test$srch_destination_id <- as.factor(hotel.test$srch_destination_id)
+hotel.test$is_booking <- as.factor(hotel.test$is_booking)
+hotel.test$srch_destination_type_id <- as.factor(hotel.test$srch_destination_type_id)
+hotel.test$hotel_continent <- as.factor(hotel.test$hotel_continent)
+hotel.test$hotel_country <- as.factor(hotel.test$hotel_country)
+hotel.test$hotel_market <- as.factor(hotel.test$hotel_market)
+hotel.test$hotel_cluster <- as.factor(hotel.test$hotel_cluster)
+
+#date predictors (Keep srch_ci and transform into year and month)
+hotel.test$srch_ci <- as.Date(hotel.test$srch_ci)
+hotel.test$srch_ci <- as.POSIXlt(hotel.test$srch_ci)
+hotel.test$year <- hotel.test$srch_ci$year + 1900
+hotel.test$month  <- hotel.test$srch_ci$mon  + 1
+
+hotel.test <- na.omit(hotel.test)
+#1,999 obs left
+```
+
+# EDA
+
+```{r, echo=FALSE}
+#EDA
+library(ggplot2)
+#1. Site_name (No significant difference)
+#ggplot(hotel.train) +
+#  geom_bar(aes(x = site_name, fill = is_booking))
+
+#2. posa_continent (No significant difference)
+# ggplot(hotel.train) +
+# geom_bar(aes(x = posa_continent, fill = is_booking)) +
+#  ggtitle("Barplot of posa_continent with booking") +
+#  xlab("Continent associated with the Expedia point of sale") +
+#  scale_x_discrete(labels = c("Continent 0", "Continent 1", "Continent 2", "Continent 3", "Continent 4")) +
+#  scale_fill_discrete(name = "Booking sucessfully?", labels = c("Yes", "No"))
+
+#3. is_mobile (No significant difference)
+# ggplot(hotel.train) +
+#    geom_bar(aes(x = is_mobile, fill = is_booking)) +
+#    ggtitle("Barplot of is_mobile with booking") +
+#    xlab("Is users connect from a mobile device?") +
+#    scale_fill_discrete(name = "Booking sucessfully?", labels = c("Yes", "No"))
+
+#4. is_package
+ggplot(hotel.train) +
+    geom_bar(aes(x = is_package, fill = is_booking)) +
+    ggtitle("Barplot of is_package with booking") +
+    xlab("Is the booking was generated as a package (combined with a flight)?") +
+    scale_fill_discrete(name = "Booking sucessfully?", labels = c("Yes", "No"))
+
+##It seems it is more like to book the hotel if the booking was generated as a part of a package.
+
+#5. channel (No significant difference)
+#ggplot(hotel.train) +
+#    geom_bar(aes(x = channel, fill = is_booking)) +
+#    ggtitle("Barplot of channel with booking") +
+#    xlab("ID of a marketing channel") +
+#    scale_fill_discrete(name = "Booking sucessfully?", labels = c("Yes", "No"))
+
+#6. srch_destination_type_id
+ggplot(hotel.train) +
+    geom_bar(aes(x = srch_destination_type_id, fill = is_booking)) +
+    ggtitle("Barplot of srch_destination_type_id with booking") +
+    xlab("Type of destination") +
+    scale_fill_discrete(name = "Booking sucessfully?", labels = c("Yes", "No"))
+
+##The proportion of booking seems different between each type of destination.
+
+#7. hotel_continent
+ggplot(hotel.train) +
+    geom_bar(aes(x = hotel_continent, fill = is_booking)) +
+    ggtitle("Barplot of hotel_continent with booking") +
+    xlab("Hotel continent") +
+    scale_fill_discrete(name = "Booking sucessfully?", labels = c("Yes", "No"))
+
+##The probability of booking in hotel continent 2 seems less than the others.
+
+#8. hotel_cluster
+ggplot(hotel.train) +
+    geom_bar(aes(x = hotel_cluster, fill = is_booking)) +
+    ggtitle("Barplot of hotel_cluster with booking") +
+    xlab("ID of a hotel cluster") +
+    scale_fill_discrete(name = "Booking sucessfully?", labels = c("Yes", "No"))
+
+##It seems the probability of booking was differ from hotel clusters.
+
+#9.  orig_destination_distance (No significant difference)
+#ggplot(hotel.train, aes(x=is_booking, y=orig_destination_distance,color=is_booking)) + 
+#    geom_boxplot()+
+#    scale_color_manual(values=c("#999999", "#56B4E9"))+
+#    labs(title="Boxplot of physical distance with booking", x="Booking", y = "Physical distance") +
+#    scale_x_discrete(labels = c("Yes", "No"))
+
+#10. srch_adults_cnt
+ggplot(hotel.train) +
+    geom_bar(aes(x = as.factor(srch_adults_cnt), fill = is_booking)) +
+    ggtitle("Barplot of number of adults in the hotel room") +
+    xlab("Number of adults in the hotel room") +
+    scale_fill_discrete(name = "Booking sucessfully?", labels = c("Yes", "No"))
+
+##If only one adult in the room, the probability of booking was lower than others.
+
+#11. srch_children_cnt (No significant difference)
+#ggplot(hotel.train) +
+#    geom_bar(aes(x = as.factor(srch_children_cnt), fill = is_booking)) +
+#    ggtitle("Barplot of number of children in the hotel room") +
+#    xlab("Number of children in the hotel room") +
+#    scale_fill_discrete(name = "Booking sucessfully?", labels = c("Yes", "No"))
+
+#12. srch_rm_cnt (No significant difference)
+#ggplot(hotel.train) +
+#    geom_bar(aes(x = as.factor(srch_rm_cnt), fill = is_booking)) +
+#    ggtitle("Barplot of number of rooms in the search") +
+#    xlab("Number of rooms in the search") +
+#    scale_fill_discrete(name = "Booking sucessfully?", labels = c("Yes", "No"))
+
+#13. cnt
+ggplot(hotel.train) +
+    geom_bar(aes(x = as.factor(cnt), fill = is_booking)) +
+    ggtitle("Barplot of the number of similar events in the context of the same user session") +
+    xlab("Number of similar events in the context of the same user session") +
+    scale_fill_discrete(name = "Booking sucessfully?", labels = c("Yes", "No"))
+
+#The probability of booking seems differnt in cnt, but it is a umbalanced variable.
+
+#14. year
+ggplot(hotel.train) +
+  geom_bar(aes(x = as.factor(year), fill = is_booking)) +
+  scale_fill_brewer(palette = "Set1")
+
+#The year might also be one of factors.
+
+#15. month (No significant difference)
+#ggplot(hotel.train) +
+#  geom_bar(aes(x = as.factor(month), fill = is_booking)) +
+#  scale_fill_brewer(palette = "Set1")
+```
+
+# Logistic Regression
+
+```{r, echo=FALSE, warning=FALSE}
+##Logistic
+#Remove predictors
+hotel.train$date_time <- NULL
+hotel.train$user_id <- NULL
+hotel.train$srch_ci <- NULL
+hotel.train$srch_co <- NULL
+
+hotel.test$date_time <- NULL
+hotel.test$user_id <- NULL
+hotel.test$srch_ci <- NULL
+hotel.test$srch_co <- NULL
+
+#build logistic model
+hotel.train.logit <- glm(is_booking ~ ., data = hotel.train[,-c(2:5,13,18:20)], family='binomial')
+summary(hotel.train.logit)
+
+#find optimal cutoff
+prob <- predict(hotel.train.logit, hotel.test, type="response")  # predicted scores
+
+library(InformationValue)
+optCutOff <- optimalCutoff(actuals = hotel.test$is_booking, predictedScores =  prob)[1]
+optCutOff
+#The optimal cutoff is 0.4752473.
+
+#confusion matrix
+confusionMatrix(hotel.test$is_booking, prob, threshold = optCutOff)
+
+#Misclass error
+misClassError(actuals = hotel.test$is_booking, predictedScores = prob, threshold = optCutOff)
+#0.3287
+
+#Test Accuracy
+precision(hotel.test$is_booking, prob, threshold = optCutOff)
+#0.6173657
+
+#ROC
+ROC <- plotROC(actuals = as.factor(hotel.test$is_booking), predictedScores =  prob)
+ROC
+
+#Residuals plot
+Index <- 1:dim(hotel.train)[1]
+# deviance residuals
+Deviance_Residuals <- residuals(hotel.train.logit)
+dff <- data.frame(Index,Deviance_Residuals,hotel.train$is_booking)
+ 
+ggplot(data = dff, mapping = aes(x = Index,y = Deviance_Residuals,color = hotel.train$is_booking)) +
+  geom_point() +
+  geom_hline(yintercept = 3,linetype = "dashed", color = "blue") +
+  geom_hline(yintercept = -3,linetype = "dashed", color = "blue") +
+  labs(title = "Plot of Deviance Residuals") +
+  theme(plot.title = element_text(hjust = 0.5))
+#Most of the residuals falls with (-3, 3).
+```
+
+# Machine Learning Methods
+
+```{r, echo=FALSE}
+#Neural Network
+library(parallel) 
+library(doParallel)
+start_time2 <- Sys.time()
+cl <- makePSOCKcluster(3) 
+registerDoParallel(cl)
+
+library(nnet)
+hotel.nn <- nnet(is_booking ~ ., data = hotel.train[,-c(2:5,13,18:20)], size = 10)
+nn.predict <- predict(object = hotel.nn, newdata = hotel.test, type = "raw")
+
+table.nn <- table(nn.predict, hotel.test$is_booking)
+table.nn
+
+#Test Accuracy
+(table.tree[1,1]+table.tree[2,2])/sum(table.tree)
+
+#CART
+library(rpart)
+hotel.tree <- rpart(is_booking ~ ., data = hotel.train[,-c(2:5,13,18:20)], method = "class", cp = 1e-3)
+
+tree.predict <- predict(hotel.tree, hotel.test, type = "class")
+
+table.tree <- table(tree.predict, hotel.test$is_booking)
+table.tree
+
+#Test Accuracy
+(table.tree[1,1]+table.tree[2,2])/sum(table.tree)
+#0.6573287
+
+#Random Forest
+library(randomForest)
+hotel.rf <- randomForest(is_booking ~ . , hotel.train[,-c(2:5,13,18:20)], n_tree = 100)
+
+rf.predict <- predict(hotel.rf, hotel.test, type = "class")
+
+table.rf <- table(rf.predict, hotel.test$is_booking)
+table.rf
+
+#Test Accuracy
+(table.tree[1,1]+table.tree[2,2])/sum(table.tree)
+#
+
+#SVM
+
+
+stopCluster(cl) 
+end_time2 <- Sys.time() 
+end_time2 - start_time2
+
+

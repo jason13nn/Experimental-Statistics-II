@@ -1,0 +1,155 @@
+---
+title: "HW7"
+author: "Yichien Chou"
+date: "2020/4/22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE}
+library(NbClust)
+library(mclust)
+library(cluster)
+library(factoextra)
+library(tidyr)
+library(dplyr)
+
+kc_house <- read.csv("/Users/jason13nn/Desktop/SMU/Spring 2020/STAT 6302 (Experimental Statistics)/files/kc_house_data.csv")
+```
+
+# Data Preparation
+
+```{r , message=FALSE}
+set.seed(123)
+kc_house_short <- kc_house[sample(1:nrow(kc_house), 1500), c(3:8, 11, 15)]
+head(kc_house_short)
+```
+
+## Part A: Standardization of Columns
+
+```{r , message=FALSE}
+##Begin by scaling the data (the first 4 columns are predictors, the fifth is the outcome
+kc_house.cluster <- as.data.frame(scale(kc_house_short[,2:8]))
+kc_house.cluster$price<- kc_house_short$price
+```
+
+## Part B: NbClust - K-Means
+
+```{r , message=FALSE}
+##You can calculate the distance matrix outside the algorithm
+dist.kc_house <- dist(kc_house.cluster[,1:7], method = "euclidean", diag = FALSE)
+
+kc_house.kmeans <- NbClust(kc_house.cluster[,1:7], diss = dist.kc_house, 
+distance = NULL, min.nc = 2, max.nc =6, method = "kmeans", index = "all")
+
+##Add cluster assignment to the data set
+kc_house.cluster$kmeans.clust <- factor(kc_house.kmeans$Best.partition)
+
+```
+
+## Part C: NbClust - Hierarchical
+
+```{r , message=FALSE}
+
+kc_house.hierarchical <- NbClust(kc_house.cluster[,1:7], diss = dist.kc_house, 
+distance = NULL, min.nc = 2, max.nc = 6, method = "average", index = "all")
+
+##Add cluster assignment to the data set
+kc_house.cluster$hierarchical.clust <- factor(kc_house.hierarchical$Best.partition)
+
+```
+
+## Part D: Mclust 
+
+```{r , message=FALSE}
+mod1 <- Mclust(kc_house.cluster[,1:7], G=1:6)
+
+##Add cluster assignment to the data set
+kc_house.cluster$mb.clust <- factor(mod1$classification)
+
+summary(mod1, parameters = TRUE)
+```
+
+## Part E: Visualization
+
+```{r , message=FALSE}
+
+##1. k-mean
+fviz_cluster(object = list(data = kc_house.cluster[,1:7], 
+         cluster = kc_house.kmeans$Best.partition), 
+             ellipse.type = "convex",
+             palette = "jco",
+         geom = "point",
+             repel = TRUE,
+             ggtheme = theme_bw())
+
+##2. Hierarchical Clustering
+fviz_cluster(object = list(data = kc_house.cluster[,1:7], 
+             cluster = kc_house.hierarchical$Best.partition), 
+             ellipse.type = "convex",
+             palette = "jco",
+             geom = "point",
+             repel = TRUE,
+             ggtheme = theme_bw())
+
+##3. Model-Based Clustering
+fviz_cluster(object = mod1, 
+             ellipse.type = "convex",
+             palette = "jco",
+             geom = "point",
+             repel = TRUE,
+             ggtheme = theme_bw())
+```
+
+## Part F: Cluster Summaries
+
+```{r , message=FALSE}
+centers <- aggregate(kc_house.cluster[, 1:7], list(kc_house.kmeans$Best.partition), mean)
+
+centers2 <- gather(centers, "Symbol", "Mean", -Group.1)
+
+ggplot(centers2, aes(x=Symbol, y=Mean, fill=Symbol)) +
+geom_bar(stat='identity', position='identity', width=0.75) +
+facet_grid(-Group.1 ~ ., scales='free_y') +
+theme_bw() +
+theme(legend.position = "none")
+```
+
+## Part G: Sales Price
+
+```{r , message=FALSE}
+##1. k-mean
+ggplot(kc_house.cluster,aes(x=kmeans.clust,y=log(price),fill=kmeans.clust))+
+geom_boxplot(width=.5)+
+labs(title="Box plot of K-Means", x="K-Means Clustering", y="Log of Price")+
+theme(plot.title=element_text(hjust = 0.5,face="bold",size=15))
+
+##2. Hierarchical Clustering
+ggplot(kc_house.cluster,aes(x=hierarchical.clust,y=price,fill=hierarchical.clust))+
+geom_boxplot(width=.5)+
+labs(title="Box plot of Hierarchical", x="Hierarchical Clustering", y="Log of Price")+
+theme(plot.title=element_text(hjust = 0.5,face="bold",size=15))
+
+##3. Model-Based Clustering
+ggplot(kc_house.cluster,aes(x=mb.clust,y=price,fill=mb.clust))+
+geom_boxplot(width=.5)+
+labs(title="Box plot of Model-Based", x="Model-Based Clustering", y="Log of Price")+
+theme(plot.title=element_text(hjust = 0.5,face="bold",size=15))
+```
+
+1. Using K-Means Clustering, we can see that cluster 1 is more expensive than cluster 2.
+
+2. Using Hierarchical Clustering, we can see cluster 2 is more expansive than cluster 1. However, there is only 1 observation in cluster 2.
+
+3. Using Model-Based Clustering, we can see cluster 2 is more expensive than the other 5 clusters. We cannot see the significant difference between the five clusters.
+
+## Part H: Summary
+
+For K-Means and Hierarchical Clustering, they both picked two clusters. But Model-Based Clustering picked six clusters, which is far more than the other two methods.
+
+Hierarchical Clustering did not perform well because one of the clusters had only one observation, which means most of the observations belong to cluster 1. 
+
+Using K-Means Clustering, the difference in price is pretty obvious between the two clusters. On the contrary, although Model-Based Clustering classified observations into six groups, we did not see the difference in price between some groups.

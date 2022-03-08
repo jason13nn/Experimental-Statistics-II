@@ -1,0 +1,153 @@
+---
+title: "HW_Review"
+author: "Yichien Chou"
+date: "2020/3/11"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Problem 1
+##Part A
+Since there are two factors (alcoholic, treatment). Therefore, it is a Two-Way basic factorial design.
+
+## Part B
+It is a Split Plot design. The whole plot factor is coencentration of auxin; The whole plot is the plants; The split plot factor is whether the pair was debladed; The splt plot is the three lowerest leaf pairs.
+
+## Part C
+One-Way Basic Factorial Design.
+
+## Part D
+Since it splits experimental units into groups(block) of similar units, then assign treatment to units separately with each block. Thus, it is a Complete Block Design.
+
+# Problem 2
+
+```{r,echo=FALSE, message=FALSE}
+library(ggplot2)
+library(lsmeans)
+options(contrasts =c("contr.sum", "contr.poly"))
+```
+## Part A
+
+```{r, echo=FALSE}
+cook <- read.csv('/Users/jason13nn/Desktop/SMU/Spring 2020/STAT 6302 (Experimental Statistics)/files/cook.csv')
+head(cook)
+summarySE <- function(data=NULL, measurevar, groupvars=NULL, na.rm=FALSE,
+                      conf.interval=.95, .drop=TRUE) {
+  library(plyr)
+  
+  # New version of length which can handle NA's: if na.rm==T, don't count them
+  length2 <- function (x, na.rm=FALSE) {
+    if (na.rm) sum(!is.na(x))
+    else       length(x)
+  }
+  
+  # This does the summary. For each group's data frame, return a vector with
+  # N, mean, and sd
+  datac <- ddply(data, groupvars, .drop=.drop,
+                 .fun = function(xx, col) {
+                   c(N    = length2(xx[[col]], na.rm=na.rm),
+                     mean = mean   (xx[[col]], na.rm=na.rm),
+                     sd   = sd     (xx[[col]], na.rm=na.rm)
+                   )
+                 },
+                 measurevar
+  )
+  
+  # Rename the "mean" column    
+  datac <- rename(datac, c("mean" = measurevar))
+  
+  datac$se <- datac$sd / sqrt(datac$N)  # Calculate standard error of the mean
+  
+  # Confidence interval multiplier for standard error
+  # Calculate t-statistic for confidence interval: 
+  # e.g., if conf.interval is .95, use .975 (above/below), and use df=N-1
+  ciMult <- qt(conf.interval/2 + .5, datac$N-1)
+  datac$ci <- datac$se * ciMult
+  
+  return(datac)
+}
+
+cook.summary <- summarySE(cook, measurevar="iron", groupvars=c("pot", "dish"))
+cook.summary
+```
+
+## Part B
+```{r, echo=FALSE}
+ggplot(cook.summary, aes(x=pot, y=iron, group=dish, color=dish)) + 
+  geom_errorbar(aes(ymin=iron-se, ymax=iron+se), width=0.1, 
+                position=position_dodge(0.1)) +
+  geom_line(position=position_dodge(0.1)) +
+  geom_point(position=position_dodge(0.1)) +
+  theme_bw()
+```
+
+## Part C
+```{r, echo=FALSE}
+cook.anova <- aov(iron ~ pot + dish + pot*dish, data=cook)
+summary(cook.anova)
+```
+
+``````{r, echo=FALSE}
+boxplot(iron ~ pot + dish, data=cook)
+```
+
+```{r, echo=FALSE}
+par(mfrow=c(2,2))
+plot(cook.anova)
+```
+We assume the observations are independent and samples are randomly selected. From QQ plot, it seems satisfied normality assumption. However, from boxplot, equal standard deviation assumption is violated. 
+There is evidence of an interaction (F=4.89, p=0.00425), as well as both main effects (F=92.26, p<0.0001; F=34.46, p<0.0001). However, since the interaction is significant we will do post hoc comparisons on the crossedfactors.
+
+# Part D
+```{r, echo=FALSE}
+lsmeans(cook.anova, pairwise ~ pot + dish)
+```
+In sum, aluminum and clay don’tappear to be different unless the vegetable version is compared to the other twofoods.
+
+# Problem 3
+```{r, echo=FALSE}
+library(factoextra)
+```
+## Part A
+```{r, echo=FALSE}
+glass <- read.csv("/Users/jason13nn/Desktop/SMU/Spring 2020/STAT 6302 (Experimental Statistics)/files/glass.csv")
+
+glassPCA <- prcomp(glass[,1:9], center=T, scale=T)
+summary(glassPCA)
+```
+
+## Part B
+```{r, echo=FALSE}
+fviz_eig(glassPCA)
+```
+
+```{r, echo=FALSE}
+(VE <- glassPCA$sdev^2)
+PVE <- VE / sum(VE)
+round(PVE, 2)
+```
+
+The first four PCs explained 0.28 + 0.23 + 0.16 + 0.13 = 80% of the variance.
+Therefore, we keep the first four principal components. 
+
+## Part C
+```{r, echo=FALSE}
+fviz_pca_var(glassPCA, col.var = "contrib", 
+gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+repel = TRUE)
+```
+```{r, echo=FALSE}
+glassPCA$rotation[,1:4]
+```
+PC1 shows that `RI`, `Al`, and `Ca` placed most weight on the first loading. It is hard to name this component due to uncertainty of their relationship. 
+
+## Part D
+```{r, echo=FALSE}
+fviz_pca_ind(glassPCA, label="none", habillage=glass$Type,
+addEllipses=TRUE, ellipse.level=0.95, palette = "Dark2")
+```
+
+It is not clear to see a separation of groups. Thus, we should also use PC3 and PC4 to classify glass type.

@@ -1,0 +1,87 @@
+---
+title: "HW5"
+author: "Yichien Chou"
+date: "2020/3/29"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE, message=FALSE, warning= FALSE}
+library(MASS)
+library(caret)
+library(klaR)
+library(pROC)
+library(OptimalCutpoints)
+
+bird <- read.csv("/Users/jason13nn/Desktop/SMU/Spring 2020/STAT 6302 (Experimental Statistics)/files/Bird.csv")
+
+levels(bird$LC)
+
+#Define reference
+bird$LC <- relevel(bird$LC, ref = "NoCancer")
+```
+
+## Part A
+
+
+```{r, echo=FALSE, message=FALSE, warning= FALSE}
+bird.lm <- glm(LC ~ FM + SS + BK + AG + YR + CD, family = "binomial", data = bird)
+summary(bird.lm)
+```
+
+## Part B
+
+*BK*: The objects with no bird multiplies the odds of no Lung Cancer by exp(-1.363) = 0.256 times.
+*YR*: An one unit increases in YR multiplies the odds of no Lung Cancer by exp(0.723) = 0.485.
+
+## Part C
+
+```{r, echo=FALSE, message=FALSE, warning= FALSE}
+##Predict the test set
+bird$Cancer <- ifelse(bird$LC == "NoCancer",0,1) 
+bird$pred.prob <- predict(bird.lm , bird, type = "response")
+bird$Pred.Group <- ifelse(bird$pred.prob>0.5,"LungCancer","NoCancer") 
+
+head(bird)
+```
+
+```{r, echo=FALSE, message=FALSE, warning= FALSE}
+bird$Pred.Group <- as.factor(bird$Pred.Group)
+bird$LC <- relevel(bird$LC, ref = "LungCancer")
+
+##Create the confusion matrix from the test set.
+confusionMatrix(data = bird$Pred.Group, 
+                reference = bird$LC)
+```
+
+```{r, echo=FALSE, message=FALSE, warning= FALSE}
+##ROC curves
+birdROC <- roc(bird$LC, bird$pred.prob)
+
+plot(birdROC, legacy.axes = TRUE)
+
+summary(optimal.cutpoints(X="pred.prob", status="LC", data=bird, 
+                          tag.healthy='NoCancer', methods='Youden'))
+```
+
+## Part D
+
+```{r, message=FALSE, warning= FALSE}
+#Brier Score
+library(scoring)
+
+brierScore <- mean((bird$pred.prob-bird$Cancer)^2)
+brierScore
+```
+
+## Part E
+
+Classification error is insensitive and statistically inefficient (In this case, the cutpoint is 0.5, then 0.501 and 0.999 are treated the same).
+
+## Bonus
+
+*(A)* It is opposite to the 45 degree line.
+*(B)* To correct the issue, we should change the reference of `LC` to "LungCancer".
